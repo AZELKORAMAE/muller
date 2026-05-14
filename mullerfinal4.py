@@ -1306,12 +1306,22 @@ class EmbeddedFileExtractor:
         self._extracted_content_hashes = set()
         self._content_hash_to_name = {}
 
-        # ── Plancher FJ depuis le dossier de sortie ───────────────────────
+        # ── Charger TOUS les numéros FJ existants depuis le dossier ──────
         if output_dir:
-            max_fj = self.get_max_fj_number_in_directory(output_dir)
-            if max_fj > self._fj_floor:
-                self._fj_floor = max_fj
-            self.log(f"  📊 Plancher FJ : {self._fj_floor} (prochain libre = FJ_{self._fj_floor + 1})")
+            directory = Path(output_dir)
+            if directory.exists():
+                for fp in directory.iterdir():
+                    if fp.is_file():
+                        m = re.search(r'_FJ_(\d+)', fp.stem)
+                        if m:
+                            n = int(m.group(1))
+                            self._used_fj_numbers.add(n)
+                            if n > self._fj_floor:
+                                self._fj_floor = n
+            if self._fj_floor > 0:
+                self.log(f"  📊 Plancher FJ : {self._fj_floor} (prochain libre = FJ_{self._fj_floor + 1})")
+            if self._used_fj_numbers:
+                self.log(f"  📊 Index FJ réservés : {sorted(self._used_fj_numbers)}")
 
         # ── Log référence / index manuel ──────────────────────────────────
         if self.indexation_manager:
@@ -3258,14 +3268,7 @@ class EmbeddedFileExtractor:
                                 os.unlink(temp_ole_path)
                                 return None
 
-                            # ── Extraction effective ──────────────────────────────
-                            self.extracted_count += 1
-
-                            output_name = self._generate_output_name(base_name, original_filename, file_ext)
-                            output_path = Path(output_dir) / output_name
-
-                            # ── Déduplication par contenu ────────────────────────
-                            # ── Déduplication par contenu ────────────────────────
+                            # ── Déduplication AVANT assignation de numéro ────────
                             import hashlib
                             _content_hash = hashlib.md5(file_data).hexdigest()
                             if _content_hash in self._extracted_content_hashes:
@@ -3279,7 +3282,13 @@ class EmbeddedFileExtractor:
                                 ole.close()
                                 os.unlink(temp_ole_path)
                                 return None
+
+                            # ── Extraction effective ──────────────────────────────
                             self._extracted_content_hashes.add(_content_hash)
+                            self.extracted_count += 1
+
+                            output_name = self._generate_output_name(base_name, original_filename, file_ext)
+                            output_path = Path(output_dir) / output_name
                             self._content_hash_to_name[_content_hash] = output_name
 
                             with open(output_path, 'wb') as f:
@@ -3759,14 +3768,14 @@ class EmbeddedFileExtractor:
         if bin_cleaned > 0:
             self.log(f"  ✅ Pré-traitement: {bin_cleaned} fichier(s) .bin vide(s) supprimé(s)")
         
-        self.reset_extraction_tracking(Path(docx_path).name)
-        
+        self.reset_extraction_tracking(Path(docx_path).name, output_dir)
+
         extracted_files = []
-        
+
         try:
             with tempfile.TemporaryDirectory() as temp_dir:
                 temp_path = Path(temp_dir)
-                
+
                 # Décompresser le DOCX
                 with zipfile.ZipFile(docx_path, 'r') as zip_ref:
                     zip_ref.extractall(temp_path)
@@ -4098,7 +4107,7 @@ class EmbeddedFileExtractor:
     def extract_ole_from_legacy(self, file_path, output_dir):
         """Extrait fichiers des anciens formats Office (.doc, .xls, .ppt)"""
         self.log(f"\n📄 Traitement ancien format: {Path(file_path).name}")
-        self.reset_extraction_tracking(Path(file_path).name)
+        self.reset_extraction_tracking(Path(file_path).name, output_dir)
         extracted_files = []
         
         try:
@@ -4239,10 +4248,10 @@ class EmbeddedFileExtractor:
         if bin_cleaned > 0:
             self.log(f"  ✅ Pré-traitement: {bin_cleaned} fichier(s) .bin vide(s) supprimé(s)")
         
-        self.reset_extraction_tracking(Path(xlsx_path).name)
-        
+        self.reset_extraction_tracking(Path(xlsx_path).name, output_dir)
+
         extracted_files = []
-        
+
         try:
             with tempfile.TemporaryDirectory() as temp_dir:
                 temp_path = Path(temp_dir)
@@ -4411,7 +4420,7 @@ class EmbeddedFileExtractor:
         if bin_cleaned > 0:
             self.log(f"  ✅ Pré-traitement: {bin_cleaned} fichier(s) .bin vide(s) supprimé(s)")
 
-        self.reset_extraction_tracking(pptx_path.name)
+        self.reset_extraction_tracking(pptx_path.name, output_dir)
 
         extracted_files = []
 
@@ -5590,10 +5599,10 @@ class EmbeddedFileExtractor:
         Extrait pièces jointes PDF avec numéro de page exact
         """
         self.log(f"\n📑 Traitement de: {Path(pdf_path).name}")
-        self.reset_extraction_tracking(Path(pdf_path).name)
-        
+        self.reset_extraction_tracking(Path(pdf_path).name, output_dir)
+
         extracted_files = []
-        
+
         try:
             pdf_document = fitz.open(pdf_path)
             
@@ -5822,11 +5831,12 @@ class EmbeddedFileExtractor:
         3. Convertit MSG → PDF en insérant "Voir document : nom" dans le PDF
         """
         self.log(f"\n📧 Traitement MSG: {Path(msg_path).name}")
-        self.reset_extraction_tracking(Path(msg_path).name)
 
         # ── Garantir que le dossier de sortie existe ──────────────────────
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
+
+        self.reset_extraction_tracking(Path(msg_path).name, output_dir)
 
         extracted_names = []
 
@@ -5874,17 +5884,8 @@ class EmbeddedFileExtractor:
                             })
                             continue
 
-                        # Nommage FJ_X — nettoyage des espaces dans le nom
-                        self.extracted_count += 1
-                        output_name = self._generate_output_name(
-                            Path(msg_path).stem, att_name, att_ext
-                        )
-                        # Nettoyer les espaces en fin de nom de fichier
-                        output_name_clean = output_name.strip()
-                        output_path = output_dir / output_name_clean
-
                         try:
-                            # ── Sauvegarde temporaire pour vérif MD5 ─────────
+                            # ── Sauvegarde temporaire pour vérif MD5 avant nommage ─
                             import tempfile, hashlib, shutil
                             tmp = tempfile.mktemp(suffix=att_ext)
                             attachment.SaveAsFile(tmp)
@@ -5899,6 +5900,14 @@ class EmbeddedFileExtractor:
                                 continue
 
                             self._extracted_content_hashes.add(_att_hash)
+
+                            # ── Nommage FJ_X APRÈS vérification doublon ───────
+                            self.extracted_count += 1
+                            output_name = self._generate_output_name(
+                                Path(msg_path).stem, att_name, att_ext
+                            )
+                            output_name_clean = output_name.strip()
+                            output_path = output_dir / output_name_clean
 
                             # ── Copie vers destination finale ─────────────────
                             shutil.copy2(tmp, str(output_path.absolute()))
