@@ -4329,8 +4329,61 @@ class EmbeddedFileExtractor:
                         if not self.is_file_not_image(filename, file_data):
                             self.log(f"    ⏭️ Image ignorée")
                             continue
-                        
-                        # CAS 3 : OLE
+
+                        # CAS 3 : ZIP / Office moderne (xlsx, docx, pptx…)
+                        if file_data[:4] == b'PK\x03\x04':
+                            self.log(f"    📦 Fichier ZIP/Office moderne détecté")
+                            file_ext = self.detect_office_xml_type(file_data)
+                            self.log(f"    🔍 Type: {file_ext}")
+
+                            SUPPORTED_ZIP_XLSX = {
+                                '.xlsx', '.xlsm', '.docx', '.pptx', '.pptm', '.zip', '.7z'
+                            }
+
+                            if file_ext in SUPPORTED_ZIP_XLSX:
+                                self.extracted_count += 1
+                                output_name = self._generate_output_name(
+                                    Path(xlsx_path).stem, None, file_ext
+                                )
+                                output_path = Path(output_dir) / output_name
+                                with open(output_path, 'wb') as f:
+                                    f.write(file_data)
+                                self.log(f"    ✅ Extrait (ZIP/Office): {output_name}")
+                                extracted_files.append({
+                                    'position': position,
+                                    'filename': filename,
+                                    'action': 'replace',
+                                    'sheet_name': sheet_name,
+                                    'location': location,
+                                    'extracted_name': output_name
+                                })
+                                self.add_to_report('extracted', {
+                                    'source_file': Path(xlsx_path).name,
+                                    'extracted_file': output_name,
+                                    'position': f'Feuille {sheet_name}',
+                                    'type': file_ext,
+                                    'status': 'Succès'
+                                })
+                            else:
+                                self.log(f"    ⚠️ Type ZIP non supporté: {file_ext}")
+                                extracted_files.append({
+                                    'position': position,
+                                    'filename': filename,
+                                    'action': 'keep_unsupported',
+                                    'sheet_name': sheet_name,
+                                    'location': location,
+                                    'file_type': file_ext
+                                })
+                                self.add_to_report('extracted', {
+                                    'source_file': Path(xlsx_path).name,
+                                    'extracted_file': f'[Non supporté: {file_ext}]',
+                                    'position': f'Feuille {sheet_name}',
+                                    'type': file_ext,
+                                    'status': 'Conservé'
+                                })
+                            continue
+
+                        # CAS 4 : OLE
                         if file_data[:4] == b'\xd0\xcf\x11\xe0':
                             file_ext = self.detect_file_type(file_data)
                             
@@ -4370,7 +4423,7 @@ class EmbeddedFileExtractor:
                                     'location': location,
                                     'extracted_name': extracted_name
                                 })
-                                
+
                                 self.add_to_report('extracted', {
                                     'source_file': Path(xlsx_path).name,
                                     'extracted_file': extracted_name,
@@ -4378,7 +4431,61 @@ class EmbeddedFileExtractor:
                                     'type': Path(extracted_name).suffix,
                                     'status': 'Succès'
                                 })
-                    
+
+                        # CAS 5 : Fichier direct (non-OLE, non-ZIP, ex: PDF brut)
+                        else:
+                            self.log(f"    📄 Fichier direct (non-OLE, non-ZIP) détecté")
+                            file_ext = self.detect_file_type(file_data)
+                            self.log(f"    🔍 Type: {file_ext}")
+
+                            SUPPORTED_DIRECT_XLSX = {
+                                '.pdf', '.docx', '.doc', '.xlsx', '.xlsm', '.xls',
+                                '.pptx', '.pptm', '.ppt', '.msg', '.txt', '.zip', '.7z',
+                                '.htm', '.html'
+                            }
+
+                            if file_ext in SUPPORTED_DIRECT_XLSX:
+                                self.extracted_count += 1
+                                output_name = self._generate_output_name(
+                                    Path(xlsx_path).stem, None, file_ext
+                                )
+                                output_path = Path(output_dir) / output_name
+                                with open(output_path, 'wb') as f:
+                                    f.write(file_data)
+                                self.log(f"    ✅ Extrait (direct): {output_name}")
+                                extracted_files.append({
+                                    'position': position,
+                                    'filename': filename,
+                                    'action': 'replace',
+                                    'sheet_name': sheet_name,
+                                    'location': location,
+                                    'extracted_name': output_name
+                                })
+                                self.add_to_report('extracted', {
+                                    'source_file': Path(xlsx_path).name,
+                                    'extracted_file': output_name,
+                                    'position': f'Feuille {sheet_name}',
+                                    'type': file_ext,
+                                    'status': 'Succès'
+                                })
+                            else:
+                                self.log(f"    ⚠️ Type direct non supporté: {file_ext}")
+                                extracted_files.append({
+                                    'position': position,
+                                    'filename': filename,
+                                    'action': 'keep_unsupported',
+                                    'sheet_name': sheet_name,
+                                    'location': location,
+                                    'file_type': file_ext
+                                })
+                                self.add_to_report('extracted', {
+                                    'source_file': Path(xlsx_path).name,
+                                    'extracted_file': f'[Non supporté: {file_ext}]',
+                                    'position': f'Feuille {sheet_name}',
+                                    'type': file_ext,
+                                    'status': 'Conservé'
+                                })
+
                     # ========================================
                     # ÉTAPE 3 : CRÉER XLSX MODIFIÉ
                     # ========================================
