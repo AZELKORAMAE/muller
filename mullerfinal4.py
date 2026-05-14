@@ -6084,13 +6084,18 @@ class EmbeddedFileExtractor:
                     pdf_height = 842
                     orientation = 1
 
+                word = None
+                new_doc = None
                 try:
                     self.log(f"    🔄 Création PDF avec dimensions adaptées...")
 
-                    word    = win32com.client.Dispatch("Word.Application")
-                    word.Visible = False if hasattr(word, 'Visible') else None
+                    # DispatchEx = instance Word SÉPARÉE, indépendante d'Outlook
+                    word = win32com.client.DispatchEx("Word.Application")
+                    word.Visible = False
+                    time.sleep(1)
 
                     new_doc = word.Documents.Add()
+                    time.sleep(0.5)
 
                     try:
                         new_doc.PageSetup.Orientation  = orientation
@@ -6103,9 +6108,12 @@ class EmbeddedFileExtractor:
                         self.log(f"    ✓ Page configurée")
                     except Exception as setup_error:
                         self.log(f"    ⚠ Configuration page: {setup_error}")
-                        new_doc.PageSetup.Orientation = 1
-                        new_doc.PageSetup.PageWidth   = 1190
-                        new_doc.PageSetup.PageHeight  = 842
+                        try:
+                            new_doc.PageSetup.Orientation = 1
+                            new_doc.PageSetup.PageWidth   = 1190
+                            new_doc.PageSetup.PageHeight  = 842
+                        except Exception:
+                            pass  # Continuer sans mise en page
 
                     # ── Copie du contenu MSG ──────────────────────────────
                     try:
@@ -6161,9 +6169,6 @@ class EmbeddedFileExtractor:
                         BitmapMissingFonts=True
                     )
 
-                    new_doc.Close(False)
-                    word.Quit()
-
                     inspector.Close(0)
                     msg.Close(0)
 
@@ -6172,16 +6177,20 @@ class EmbeddedFileExtractor:
                     if pdf_output.exists() and pdf_output.stat().st_size > 0:
                         self.log(f"    ✅ PDF créé avec succès")
                         self.log(f"    📦 Taille: {pdf_output.stat().st_size} bytes")
-                        # Suppression du .msg — seulement si le fichier est dans un dossier de sortie
-                        # (pas le fichier source original situé ailleurs)
                         msg_p = Path(msg_path)
                         pdf_p = Path(pdf_output)
                         if msg_p.parent.resolve() == pdf_p.parent.resolve():
-                            try:
-                                msg_p.unlink()
-                                self.log(f"    🗑️ Fichier MSG supprimé : {msg_p.name}")
-                            except Exception as del_err:
-                                self.log(f"    ⚠ Impossible de supprimer le MSG : {del_err}")
+                            for _retry in range(5):
+                                try:
+                                    msg_p.unlink()
+                                    self.log(f"    🗑️ Fichier MSG supprimé : {msg_p.name}")
+                                    break
+                                except PermissionError:
+                                    if _retry < 4:
+                                        time.sleep(1)
+                                except Exception as del_err:
+                                    self.log(f"    ⚠ Impossible de supprimer le MSG : {del_err}")
+                                    break
                         return pdf_output
                     else:
                         self.log(f"    ❌ PDF non créé")
@@ -6195,6 +6204,19 @@ class EmbeddedFileExtractor:
                     except:
                         pass
                     return None
+                finally:
+                    # Garantir fermeture de Word dans tous les cas
+                    try:
+                        if new_doc is not None:
+                            new_doc.Close(False)
+                    except Exception:
+                        pass
+                    try:
+                        if word is not None:
+                            word.Quit()
+                    except Exception:
+                        pass
+                    time.sleep(0.5)
 
             finally:
                 pythoncom.CoUninitialize()
