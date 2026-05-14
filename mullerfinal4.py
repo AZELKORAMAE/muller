@@ -1057,13 +1057,18 @@ class EmbeddedFileExtractor:
         try:
             from lxml import etree
             
+            _temp_dir_created = None
             if temp_path is None:
-                # Si pas de temp_path, créer un temporaire
-                with zipfile.ZipFile(docx_path, 'r') as zf:
-                    import tempfile
-                    temp_dir = tempfile.mkdtemp()
-                    zf.extractall(temp_dir)
-                    temp_path = Path(temp_dir)
+                import tempfile
+                _temp_dir_created = tempfile.mkdtemp()
+                try:
+                    with zipfile.ZipFile(docx_path, 'r') as zf:
+                        zf.extractall(_temp_dir_created)
+                    temp_path = Path(_temp_dir_created)
+                except Exception:
+                    shutil.rmtree(_temp_dir_created, ignore_errors=True)
+                    _temp_dir_created = None
+                    raise
             
             # Lire XMLs
             doc_xml_path = temp_path / 'word' / 'document.xml'
@@ -1169,12 +1174,15 @@ class EmbeddedFileExtractor:
                         analyze_element(element, f"Element {tag}")
             
             self.log(f"        ✅ Mapping DOCX : {len(position_mapping)} fichier(s)")
-            
+
             return position_mapping
-            
+
         except Exception as e:
             self.log(f"    ⚠️ Erreur mapping: {e}")
             return {}
+        finally:
+            if _temp_dir_created:
+                shutil.rmtree(_temp_dir_created, ignore_errors=True)
 
     def get_xlsx_ole_positions_exact(self, xlsx_path, temp_path):
         """
@@ -6776,28 +6784,6 @@ class EmbeddedFileExtractor:
                     self.log(f"  ⚠️ Format non supporté: {file_ext}")
                     return []
 
-                # ========================================
-                # CRÉER LE DOCUMENT MODIFIÉ SI NÉCESSAIRE
-                # ========================================
-                if extracted_files:
-                    try:
-                        if file_ext == '.pptx':
-                            self.create_modified_pptx_with_replacement(file_path, output_dir, extracted_files)
-
-                        elif file_ext == '.docx':
-                            temp_dir = output_dir / 'temp'
-                            temp_dir.mkdir(exist_ok=True)
-                            try:
-                                self.create_modified_docx_with_replacement(file_path, output_dir, extracted_files, temp_dir)
-                            finally:
-                                shutil.rmtree(temp_dir, ignore_errors=True)
-
-                        elif file_ext in ['.xlsx', '.xlsm']:
-                            self.create_modified_xlsx_with_replacement(file_path, output_dir, extracted_files)
-
-                    except Exception as mod_error:
-                        self.log(f"  ⚠️ Erreur création document modifié: {mod_error}")
-
                 return extracted_files
 
             except Exception as e:
@@ -7216,6 +7202,9 @@ class SimpleFileExtractorGUI:
 
                         extracted = extractor.process_file(file_path, file_dir)
 
+                        # Marquer le fichier source comme traité (évite retraitement en récursion)
+                        extractor._processed_absolute_paths.add(str(file_path.resolve()))
+
                         for msg in extractor.log_messages:
                             log(msg)
                         extractor.log_messages = []
@@ -7235,6 +7224,8 @@ class SimpleFileExtractorGUI:
                                     sig = (f"{output_copy.name}|{stat.st_size}|"
                                         f"{hashlib.md5(head).hexdigest()}")
                                     already_processed.add(sig)
+                                    # Marquer aussi le chemin absolu de la copie de sortie
+                                    extractor._processed_absolute_paths.add(str(output_copy.resolve()))
                                     log(f"  🔒 Copie source marquée : {output_copy.name}")
                                 except Exception:
                                     already_processed.add(str(output_copy.absolute()))
