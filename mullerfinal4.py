@@ -939,8 +939,24 @@ class EmbeddedFileExtractor:
                     self.log(f"      → {count} fichier(s) extrait(s)")
                 else:
                     self.log(f"      → Aucun fichier incorporé")
+
+                # Supprimer le fichier MSG du dossier de sortie après traitement
+                if file_path.suffix.lower() == '.msg' and file_path.exists():
+                    try:
+                        file_path.unlink()
+                        self.log(f"      🗑️ MSG supprimé du dossier de sortie: {file_path.name}")
+                    except Exception as del_err:
+                        self.log(f"      ⚠️ Impossible de supprimer le MSG: {del_err}")
+
             except Exception as e:
                 self.log(f"      ❌ Erreur : {e}")
+                # Supprimer quand même le MSG même si erreur de traitement
+                if file_path.suffix.lower() == '.msg' and file_path.exists():
+                    try:
+                        file_path.unlink()
+                        self.log(f"      🗑️ MSG supprimé (après erreur): {file_path.name}")
+                    except Exception as del_err:
+                        self.log(f"      ⚠️ Impossible de supprimer le MSG: {del_err}")
 
         # ── Si des fichiers ont été extraits, descendre d'un niveau ──────────
         if total_new > 0:
@@ -3032,17 +3048,24 @@ class EmbeddedFileExtractor:
                         pdf_path = self.convert_msg_to_pdf(output_path, output_dir, msg_attachments)
                         if pdf_path and pdf_path.exists():
                             self.log(f"  ✅ PDF créé: {pdf_path.name}")
-                            # Suppression de secours si convert_msg_to_pdf ne l'a pas fait
-                            if output_path.exists():
-                                try:
-                                    output_path.unlink()
-                                    self.log(f"  🗑️ MSG supprimé (fallback): {output_path.name}")
-                                except Exception as del_err:
-                                    self.log(f"  ⚠️ Impossible de supprimer le MSG: {del_err}")
                         else:
-                            self.log(f"  ⚠️ PDF non créé — MSG conservé: {output_path.name}")
+                            self.log(f"  ⚠️ PDF non créé — suppression MSG quand même")
+                        # Toujours supprimer le MSG du dossier de sortie
+                        if output_path.exists():
+                            try:
+                                output_path.unlink()
+                                self.log(f"  🗑️ MSG supprimé: {output_path.name}")
+                            except Exception as del_err:
+                                self.log(f"  ⚠️ Impossible de supprimer le MSG: {del_err}")
                     except Exception as pdf_error:
                         self.log(f"  ⚠️ Erreur conversion PDF: {pdf_error}")
+                        # Supprimer quand même le MSG même si conversion échoue
+                        if output_path.exists():
+                            try:
+                                output_path.unlink()
+                                self.log(f"  🗑️ MSG supprimé (après erreur PDF): {output_path.name}")
+                            except Exception as del_err:
+                                self.log(f"  ⚠️ Impossible de supprimer le MSG: {del_err}")
 
                     ole.close()
                     os.unlink(temp_ole_path)
@@ -3288,17 +3311,24 @@ class EmbeddedFileExtractor:
                                     pdf_path = self.convert_msg_to_pdf(output_path, output_dir, msg_attachments)
                                     if pdf_path and pdf_path.exists():
                                         self.log(f"  ✅ PDF créé: {pdf_path.name}")
-                                        # Suppression de secours si convert_msg_to_pdf ne l'a pas fait
-                                        if output_path.exists():
-                                            try:
-                                                output_path.unlink()
-                                                self.log(f"  🗑️ MSG supprimé (fallback): {output_path.name}")
-                                            except Exception as del_err:
-                                                self.log(f"  ⚠️ Impossible de supprimer le MSG: {del_err}")
                                     else:
-                                        self.log(f"  ⚠️ PDF non créé — MSG conservé: {output_path.name}")
+                                        self.log(f"  ⚠️ PDF non créé — suppression MSG quand même")
+                                    # Toujours supprimer le MSG du dossier de sortie
+                                    if output_path.exists():
+                                        try:
+                                            output_path.unlink()
+                                            self.log(f"  🗑️ MSG supprimé: {output_path.name}")
+                                        except Exception as del_err:
+                                            self.log(f"  ⚠️ Impossible de supprimer le MSG: {del_err}")
                                 except Exception as pdf_error:
                                     self.log(f"  ⚠️ Erreur conversion PDF: {pdf_error}")
+                                    # Supprimer quand même le MSG même si conversion échoue
+                                    if output_path.exists():
+                                        try:
+                                            output_path.unlink()
+                                            self.log(f"  🗑️ MSG supprimé (après erreur PDF): {output_path.name}")
+                                        except Exception as del_err:
+                                            self.log(f"  ⚠️ Impossible de supprimer le MSG: {del_err}")
 
                             ole.close()
                             os.unlink(temp_ole_path)
@@ -5906,16 +5936,16 @@ class EmbeddedFileExtractor:
                 if pdf_path and Path(pdf_path).exists():
                     self.log(f"  ✓ PDF créé: {Path(pdf_path).name}")
                     self._processed_absolute_paths.add(str(Path(pdf_path).resolve()))
-                    # Supprimer le MSG dans output_dir s'il y a été copié
-                    msg_in_output = Path(output_dir) / Path(msg_path).name
-                    if msg_in_output.exists() and msg_in_output.resolve() != Path(msg_path).resolve():
-                        try:
-                            msg_in_output.unlink()
-                            self.log(f"  🗑️ MSG supprimé du dossier de sortie: {msg_in_output.name}")
-                        except Exception as del_err:
-                            self.log(f"  ⚠️ Impossible de supprimer le MSG: {del_err}")
                 else:
                     self.log(f"  ⚠ Conversion PDF échouée (Outlook requis)")
+                # Toujours supprimer le MSG du dossier de sortie (avec ou sans PDF)
+                msg_in_output = Path(output_dir) / Path(msg_path).name
+                if msg_in_output.exists() and msg_in_output.resolve() != Path(msg_path).resolve():
+                    try:
+                        msg_in_output.unlink()
+                        self.log(f"  🗑️ MSG supprimé du dossier de sortie: {msg_in_output.name}")
+                    except Exception as del_err:
+                        self.log(f"  ⚠️ Impossible de supprimer le MSG: {del_err}")
 
             except Exception as pdf_error:
                 self.log(f"  ⚠ Erreur conversion PDF: {pdf_error}")
