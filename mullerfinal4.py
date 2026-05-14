@@ -2260,9 +2260,10 @@ class EmbeddedFileExtractor:
                 self.log(f"      ✅ INDEX APPLIQUÉ : FJ_{next_num} "
                         f"(base={reference_start_index}, position={self.extracted_count})")
             else:
-                next_num = file_number_in_name + self.extracted_count
+                # Prochain numéro séquentiel après le dernier assigné
+                next_num = self._fj_floor + 1
                 self.log(f"      ℹ️ FICHIER : FJ_{next_num} "
-                        f"(base={file_number_in_name}, position={self.extracted_count})")
+                        f"(après plancher FJ_{self._fj_floor})")
 
             # ── Éviter collision avec un FJ déjà utilisé ─────────────────
             while next_num in self._used_fj_numbers:
