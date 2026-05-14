@@ -1282,7 +1282,7 @@ class EmbeddedFileExtractor:
         """
         self.current_file_extractions = {}
         self.current_source_file = source_filename
-        self.extracted_count = 1
+        self.extracted_count = 0
 
         # ── RÉINITIALISATION COMPLÈTE pour chaque nouveau fichier ────────
         self._fj_floor = 0
