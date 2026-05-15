@@ -5343,14 +5343,27 @@ class EmbeddedFileExtractor:
                                 txBox = slide.shapes.add_textbox(
                                     left, warning_top, width, Inches(0.38)
                                 )
+                                txBox.fill.solid()
+                                txBox.fill.fore_color.rgb = PPTRGBColor(50, 50, 50)
+                                txBox.line.color.rgb = PPTRGBColor(200, 120, 0)
+                                txBox.line.width = PPTPt(1.0)
+
                                 tf = txBox.text_frame
                                 tf.clear()
                                 p = tf.paragraphs[0]
                                 p.text = "⚠️ Fichier vide (0 Ko) — non archivé SharePoint"
                                 p.font.bold = True
                                 p.font.size = PPTPt(9)
-                                p.font.color.rgb = PPTRGBColor(255, 153, 0)
+                                p.font.color.rgb = PPTRGBColor(255, 200, 0)
                                 tf.word_wrap = True
+
+                                # Premier plan
+                                sp_elem = txBox.element
+                                sp_tree = sp_elem.getparent()
+                                if sp_tree is not None:
+                                    sp_tree.remove(sp_elem)
+                                    sp_tree.append(sp_elem)
+
                                 self.log(f"    ✅ Message VIDE ajouté au-dessus")
                             except Exception as e:
                                 self.log(f"    ⚠️ Erreur message vide: {e}")
@@ -5375,6 +5388,11 @@ class EmbeddedFileExtractor:
                                 txBox = slide.shapes.add_textbox(
                                     label_left, label_top, label_width, label_height
                                 )
+                                txBox.fill.solid()
+                                txBox.fill.fore_color.rgb = PPTRGBColor(50, 50, 50)
+                                txBox.line.color.rgb = PPTRGBColor(200, 120, 0)
+                                txBox.line.width = PPTPt(1.0)
+
                                 tf = txBox.text_frame
                                 tf.word_wrap = True
                                 tf.clear()
@@ -5382,7 +5400,15 @@ class EmbeddedFileExtractor:
                                 p.text = "⚠️ Type de fichier non supporté par l'archivage SharePoint"
                                 p.font.bold  = True
                                 p.font.size  = PPTPt(9)
-                                p.font.color.rgb = PPTRGBColor(255, 153, 0)
+                                p.font.color.rgb = PPTRGBColor(255, 200, 0)
+
+                                # Premier plan
+                                sp_elem = txBox.element
+                                sp_tree = sp_elem.getparent()
+                                if sp_tree is not None:
+                                    sp_tree.remove(sp_elem)
+                                    sp_tree.append(sp_elem)
+
                                 self.log(f"    ✅ Message NON SUPPORTÉ ajouté à droite du shape")
                             except Exception as e:
                                 self.log(f"    ⚠️ Erreur message non supporté: {e}")
@@ -5435,14 +5461,32 @@ class EmbeddedFileExtractor:
                                 txBox = slide.shapes.add_textbox(
                                     clamped_left, clamped_top, tb_width, tb_height
                                 )
+
+                                # Fond gris foncé
+                                txBox.fill.solid()
+                                txBox.fill.fore_color.rgb = PPTRGBColor(50, 50, 50)
+
+                                # Bordure rouge
+                                txBox.line.color.rgb = PPTRGBColor(200, 0, 0)
+                                txBox.line.width = PPTPt(1.5)
+
                                 tf = txBox.text_frame
                                 tf.word_wrap = True
                                 tf.clear()
+
+                                # Ligne 1 : "Voir <nom>"
                                 p = tf.paragraphs[0]
                                 p.text = f"Voir {Path(filename).stem}"
                                 p.font.bold      = True
                                 p.font.size      = font_size
-                                p.font.color.rgb = PPTRGBColor(255, 0, 0)
+                                p.font.color.rgb = PPTRGBColor(255, 255, 255)
+
+                                # Mettre en PREMIER PLAN (dernier dans spTree = devant tout)
+                                sp_elem = txBox.element
+                                sp_tree = sp_elem.getparent()
+                                if sp_tree is not None:
+                                    sp_tree.remove(sp_elem)
+                                    sp_tree.append(sp_elem)
 
                                 self.log(f"    ✅ Shape REMPLACÉ → '{filename}' "
                                         f"(left={clamped_left//914400:.2f}\", top={clamped_top//914400:.2f}\")")
