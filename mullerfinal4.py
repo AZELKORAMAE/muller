@@ -5295,6 +5295,26 @@ class EmbeddedFileExtractor:
                     # Trier par sp_element_id décroissant (évite décalages lors des suppressions)
                     actions.sort(key=lambda x: x.get('sp_element_id') or 0, reverse=True)
 
+                    # Suivi des zones occupées par les textboxes déjà placées sur ce slide
+                    # pour éviter le chevauchement (liste de (left, top, right, bottom))
+                    _placed_boxes = []
+
+                    def _find_free_top(left, top, w, h, gap=Inches(0.08)):
+                        """Décale top vers le bas jusqu'à trouver une zone sans chevauchement."""
+                        _top = top
+                        for _ in range(50):  # max 50 tentatives
+                            right  = left + w
+                            bottom = _top + h
+                            overlap = False
+                            for (bl, bt, br, bb) in _placed_boxes:
+                                if left < br and right > bl and _top < bb and bottom > bt:
+                                    overlap = True
+                                    _top = bb + gap
+                                    break
+                            if not overlap:
+                                break
+                        return _top
+
                     for action_item in actions:
                         action_type   = action_item['action']
                         sp_element_id = action_item.get('sp_element_id')
@@ -5440,7 +5460,6 @@ class EmbeddedFileExtractor:
                                 if clamped_left < 0:
                                     clamped_left = Inches(0.1)
                                 if clamped_left + tb_width > slide_w:
-                                    # Décaler à gauche pour rester dans la slide
                                     clamped_left = slide_w - tb_width - Inches(0.1)
                                 if clamped_left < 0:
                                     clamped_left = Inches(0.1)
@@ -5449,13 +5468,21 @@ class EmbeddedFileExtractor:
                                 if clamped_top < 0:
                                     clamped_top = Inches(0.1)
                                 if clamped_top + tb_height > slide_h:
-                                    # Remonter pour rester dans la slide
                                     clamped_top = slide_h - tb_height - Inches(0.1)
                                 if clamped_top < 0:
                                     clamped_top = Inches(0.1)
 
+                                # ── Anti-chevauchement : décaler vers le bas si nécessaire ─
+                                clamped_top = _find_free_top(clamped_left, clamped_top, tb_width, tb_height)
+                                # Clamper après décalage
+                                if clamped_top + tb_height > slide_h:
+                                    clamped_top = slide_h - tb_height - Inches(0.1)
+                                if clamped_top < 0:
+                                    clamped_top = Inches(0.1)
+                                _placed_boxes.append((clamped_left, clamped_top,
+                                                      clamped_left + tb_width, clamped_top + tb_height))
+
                                 # ── Taille du texte adaptée selon l'espace disponible ───
-                                # Si le shape original était petit, réduire la police
                                 font_size = PPTPt(10) if (width < Inches(1.5) or height < Inches(0.5)) else PPTPt(12)
 
                                 txBox = slide.shapes.add_textbox(
@@ -6983,7 +7010,7 @@ class SimpleFileExtractorGUI:
     
     def __init__(self, root):
         self.root = root
-        self.root.title("Extracteur de Fichiers Incorporés - CORRIGÉ")
+        self.root.title("EXTRACTEUR DES FICHIERS INCORPORES")
         self.root.geometry("900x850")
         self.root.configure(bg='#ecf0f1')
         
@@ -7014,10 +7041,14 @@ class SimpleFileExtractorGUI:
         header_frame = tk.Frame(self.root, bg='#2c3e50', height=80)
         header_frame.pack(fill=tk.X)
         header_frame.pack_propagate(False)
-        
-        title_label = tk.Label(header_frame, text="📎 Extracteur CORRIGÉ : Excel + ZIP + FJ",
-                            font=('Arial', 16, 'bold'), bg='#2c3e50', fg='white')
-        title_label.pack(pady=20)
+
+        title_label = tk.Label(header_frame, text="📎 EXTRACTEUR DES FICHIERS INCORPORES",
+                               font=('Arial', 16, 'bold'), bg='#2c3e50', fg='white')
+        title_label.pack(side=tk.LEFT, padx=20, pady=20)
+
+        version_label = tk.Label(header_frame, text="SES MAROC  V1.0.4",
+                                 font=('Arial', 10, 'bold'), bg='#2c3e50', fg='#aab7c4')
+        version_label.pack(side=tk.RIGHT, padx=20, pady=20)
         
         # Frame principal
         main_frame = ttk.Frame(self.root, padding="20")
