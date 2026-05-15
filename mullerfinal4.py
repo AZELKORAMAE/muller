@@ -5356,13 +5356,16 @@ class EmbeddedFileExtractor:
                         # ────────────────────────────────────────────────────────────
                         if action_type == 'keep_empty':
                             try:
+                                w_w = width if width > 0 else Inches(1.8)
+                                w_h = Inches(0.38)
                                 warning_top = top - Inches(0.45)
                                 if warning_top < 0:
                                     warning_top = top + height + Inches(0.1)
+                                # Anti-chevauchement
+                                warning_top = _find_free_top(left, warning_top, w_w, w_h)
+                                _placed_boxes.append((left, warning_top, left + w_w, warning_top + w_h))
 
-                                txBox = slide.shapes.add_textbox(
-                                    left, warning_top, width, Inches(0.38)
-                                )
+                                txBox = slide.shapes.add_textbox(left, warning_top, w_w, w_h)
                                 txBox.fill.solid()
                                 txBox.fill.fore_color.rgb = PPTRGBColor(50, 50, 50)
                                 txBox.line.color.rgb = PPTRGBColor(200, 120, 0)
@@ -5394,20 +5397,20 @@ class EmbeddedFileExtractor:
                         # ────────────────────────────────────────────────────────────
                         elif action_type == 'keep_unsupported':
                             try:
-                                # Positionner à droite du shape, même ligne verticale
                                 gap          = Inches(0.15)
                                 label_left   = left + width + gap
-                                label_top    = top
                                 label_width  = Inches(2.8)
-                                label_height = height  # même hauteur que le shape
+                                label_height = max(height, Inches(0.4))
 
-                                # Si ça dépasse la diapo, placer à gauche à la place
                                 if label_left + label_width > slide_width:
                                     label_left = max(Emu(0), left - label_width - gap)
 
-                                txBox = slide.shapes.add_textbox(
-                                    label_left, label_top, label_width, label_height
-                                )
+                                # Anti-chevauchement
+                                label_top = _find_free_top(label_left, top, label_width, label_height)
+                                _placed_boxes.append((label_left, label_top,
+                                                      label_left + label_width, label_top + label_height))
+
+                                txBox = slide.shapes.add_textbox(label_left, label_top, label_width, label_height)
                                 txBox.fill.solid()
                                 txBox.fill.fore_color.rgb = PPTRGBColor(50, 50, 50)
                                 txBox.line.color.rgb = PPTRGBColor(200, 120, 0)
