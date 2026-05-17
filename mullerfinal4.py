@@ -1526,56 +1526,127 @@ class EmbeddedFileExtractor:
                 # ── .doc → .docx ──────────────────────────────────────────
                 if ext == '.doc':
                     new_path = file_path.with_suffix('.docx')
-                    word = None
-                    try:
-                        word = win32com.client.DispatchEx("Word.Application")
-                        word.Visible = False
-                        word.DisplayAlerts = 0
-                        doc = word.Documents.Open(
-                            str(file_path.absolute()),
-                            ConfirmConversions=False,
-                            ReadOnly=False,
-                            AddToRecentFiles=False
-                        )
-                        doc.SaveAs(str(new_path.absolute()), FileFormat=16)
-                        doc.Close(False)
-                        self.log(f"    ✅ Converti: {file_path.name} → {new_path.name}")
-                        return new_path, True
-                    except Exception as e:
-                        self.log(f"    ❌ Erreur conversion .doc: {e}")
-                        return file_path, False
-                    finally:
+                    _conv_result = [None]
+                    _conv_error  = [None]
+
+                    def _do_doc_convert():
+                        import win32com.client as _wcc
+                        import pythoncom as _pycom
+                        _pycom.CoInitialize()
+                        _word = None
                         try:
-                            if word is not None:
-                                word.Quit()
+                            _word = _wcc.DispatchEx("Word.Application")
+                            _word.Visible = False
+                            _word.DisplayAlerts = 0
+                            _word.AutomationSecurity = 3  # désactive macros sans dialogue
+                            _doc = _word.Documents.Open(
+                                str(file_path.absolute()),
+                                ConfirmConversions=False,
+                                ReadOnly=True,
+                                AddToRecentFiles=False,
+                                PasswordDocument="",
+                                PasswordTemplate="",
+                                Revert=False,
+                                NoEncodingDialog=True,
+                            )
+                            _doc.SaveAs(str(new_path.absolute()), FileFormat=16)
+                            _doc.Close(False)
+                            _conv_result[0] = new_path
+                        except Exception as _e:
+                            _conv_error[0] = str(_e)
+                        finally:
+                            try:
+                                if _word is not None:
+                                    _word.Quit()
+                            except Exception:
+                                pass
+                            try:
+                                _pycom.CoUninitialize()
+                            except Exception:
+                                pass
+
+                    _t = threading.Thread(target=_do_doc_convert, daemon=True)
+                    _t.start()
+                    _t.join(timeout=90)
+
+                    if _t.is_alive():
+                        try:
+                            subprocess.run(['taskkill', '/F', '/IM', 'WINWORD.EXE'],
+                                           capture_output=True, timeout=10)
                         except Exception:
                             pass
+                        self.log(f"    ⚠️ Timeout 90s — Word ne répond pas, conversion annulée")
+                        return file_path, False
+
+                    if _conv_result[0] is not None:
+                        self.log(f"    ✅ Converti: {file_path.name} → {new_path.name}")
+                        return _conv_result[0], True
+                    else:
+                        self.log(f"    ❌ Erreur conversion .doc: {_conv_error[0]}")
+                        return file_path, False
 
                 # ── .ppt → .pptx ──────────────────────────────────────────
                 elif ext == '.ppt':
                     new_path = file_path.with_suffix('.pptx')
-                    ppt = None
-                    try:
-                        ppt = win32com.client.DispatchEx("PowerPoint.Application")
-                        pres = ppt.Presentations.Open(
-                            str(file_path.absolute()),
-                            ReadOnly=False,
-                            Untitled=False,
-                            WithWindow=False
-                        )
-                        pres.SaveAs(str(new_path.absolute()), FileFormat=24)
-                        pres.Close()
-                        self.log(f"    ✅ Converti: {file_path.name} → {new_path.name}")
-                        return new_path, True
-                    except Exception as e:
-                        self.log(f"    ❌ Erreur conversion .ppt: {e}")
-                        return file_path, False
-                    finally:
+                    _conv_result = [None]
+                    _conv_error  = [None]
+
+                    def _do_ppt_convert():
+                        import win32com.client as _wcc
+                        import pythoncom as _pycom
+                        _pycom.CoInitialize()
+                        _ppt = None
                         try:
-                            if ppt is not None:
-                                ppt.Quit()
+                            _ppt = _wcc.DispatchEx("PowerPoint.Application")
+                            try:
+                                _ppt.DisplayAlerts = 0
+                            except Exception:
+                                pass
+                            try:
+                                _ppt.AutomationSecurity = 3
+                            except Exception:
+                                pass
+                            _pres = _ppt.Presentations.Open(
+                                str(file_path.absolute()),
+                                ReadOnly=True,
+                                Untitled=False,
+                                WithWindow=False
+                            )
+                            _pres.SaveAs(str(new_path.absolute()), FileFormat=24)
+                            _pres.Close()
+                            _conv_result[0] = new_path
+                        except Exception as _e:
+                            _conv_error[0] = str(_e)
+                        finally:
+                            try:
+                                if _ppt is not None:
+                                    _ppt.Quit()
+                            except Exception:
+                                pass
+                            try:
+                                _pycom.CoUninitialize()
+                            except Exception:
+                                pass
+
+                    _t = threading.Thread(target=_do_ppt_convert, daemon=True)
+                    _t.start()
+                    _t.join(timeout=90)
+
+                    if _t.is_alive():
+                        try:
+                            subprocess.run(['taskkill', '/F', '/IM', 'POWERPNT.EXE'],
+                                           capture_output=True, timeout=10)
                         except Exception:
                             pass
+                        self.log(f"    ⚠️ Timeout 90s — PowerPoint ne répond pas, conversion annulée")
+                        return file_path, False
+
+                    if _conv_result[0] is not None:
+                        self.log(f"    ✅ Converti: {file_path.name} → {new_path.name}")
+                        return _conv_result[0], True
+                    else:
+                        self.log(f"    ❌ Erreur conversion .ppt: {_conv_error[0]}")
+                        return file_path, False
 
                 # ── .xls → .xlsx / .xlsm ──────────────────────────────────
                 elif ext == '.xls':
