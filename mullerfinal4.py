@@ -813,7 +813,12 @@ class EmbeddedFileExtractor:
 
                     att_ext = Path(att_name).suffix.lower()
                     if att_ext not in SUPPORTED_EXTENSIONS:
-                        self.log(f"    ⚠️ Extension non supportée ignorée : {att_name}")
+                        _IMG_EXTS = {'.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff',
+                                     '.webp', '.svg', '.ico', '.emf', '.wmf'}
+                        if att_ext not in _IMG_EXTS:
+                            self.log(f"    ⚠️ Extension non supportée ignorée : {att_name}")
+                        else:
+                            self.log(f"    ⏭️ Image ignorée (MSG): {att_name}")
                         continue
 
                     self.extracted_count += 1
@@ -6288,6 +6293,12 @@ class EmbeddedFileExtractor:
                         att_ext = Path(att_name).suffix.lower()
 
                         if att_ext not in SUPPORTED_EXTENSIONS:
+                            # Images from MSG are silently ignored — not added to Non Archivables
+                            _IMG_EXTS = {'.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff',
+                                         '.webp', '.svg', '.ico', '.emf', '.wmf'}
+                            if att_ext in _IMG_EXTS:
+                                self.log(f"    ⏭️ Image ignorée (MSG): {att_name}")
+                                continue
                             self.log(f"    ⚠️ Extension non supportée : {att_name}")
                             self.add_to_report('extracted', {
                                 'source_file': Path(msg_path).name,
