@@ -5389,6 +5389,36 @@ class EmbeddedFileExtractor:
                                 break
                         return _top
 
+                    # Track all added textboxes for a final z-order pass after the loop
+                    _added_textboxes = []
+
+                    # ── Pre-grouping: detect 'replace' items at the same position ──
+                    # (multiple OLE objects in the same table cell share similar left/top)
+                    _MERGE_THR = int(914400 * 0.5)  # 0.5 inch in EMU
+                    _sp_id_to_pos_key = {}
+                    _pos_key_groups = {}
+                    for _ai in actions:
+                        if _ai.get('action') == 'replace':
+                            _sid = _ai.get('sp_element_id')
+                            _sh = None
+                            if _sid is not None:
+                                for _s in slide.shapes:
+                                    if _s.shape_id == _sid:
+                                        _sh = _s
+                                        break
+                            if _sh is not None:
+                                _lb = round(_sh.left / _MERGE_THR)
+                                _tb_val = round(_sh.top / _MERGE_THR)
+                            else:
+                                _lb = id(_ai)
+                                _tb_val = 0
+                            _key = (_lb, _tb_val)
+                            _sp_id_to_pos_key[_sid] = _key
+                            if _key not in _pos_key_groups:
+                                _pos_key_groups[_key] = []
+                            _pos_key_groups[_key].append(_ai)
+                    _processed_merged_keys = set()
+
                     for action_item in actions:
                         action_type   = action_item['action']
                         sp_element_id = action_item.get('sp_element_id')
@@ -5454,12 +5484,13 @@ class EmbeddedFileExtractor:
                                 p.font.color.rgb = PPTRGBColor(255, 200, 0)
                                 tf.word_wrap = True
 
-                                # Premier plan
+                                # Premier plan (final pass will re-ensure ordering)
                                 sp_elem = txBox.element
                                 sp_tree = sp_elem.getparent()
                                 if sp_tree is not None:
                                     sp_tree.remove(sp_elem)
                                     sp_tree.append(sp_elem)
+                                _added_textboxes.append(txBox.element)
 
                                 self.log(f"    ✅ Message VIDE ajouté au-dessus")
                             except Exception as e:
@@ -5499,12 +5530,13 @@ class EmbeddedFileExtractor:
                                 p.font.size  = PPTPt(9)
                                 p.font.color.rgb = PPTRGBColor(255, 200, 0)
 
-                                # Premier plan
+                                # Premier plan (final pass will re-ensure ordering)
                                 sp_elem = txBox.element
                                 sp_tree = sp_elem.getparent()
                                 if sp_tree is not None:
                                     sp_tree.remove(sp_elem)
                                     sp_tree.append(sp_elem)
+                                _added_textboxes.append(txBox.element)
 
                                 self.log(f"    ✅ Message NON SUPPORTÉ ajouté à droite du shape")
                             except Exception as e:
@@ -5516,18 +5548,33 @@ class EmbeddedFileExtractor:
                         # ────────────────────────────────────────────────────────────
                         elif action_type == 'replace':
                             filename = action_item['filename']
+                            _sid = action_item.get('sp_element_id')
+                            _pos_key = _sp_id_to_pos_key.get(_sid)
+                            _is_merged = _pos_key is not None and len(_pos_key_groups.get(_pos_key, [])) > 1
                             try:
                                 sp = target_shape.element
                                 if sp is not None and sp.getparent() is not None:
                                     sp.getparent().remove(sp)
                                     self.log(f"    ✅ Shape OLE supprimé")
 
+                                # Si ce groupe de table a déjà eu son textbox fusionné, ne pas en créer un autre
+                                if _is_merged and _pos_key in _processed_merged_keys:
+                                    self.log(f"    ℹ️ Groupe table fusionné: textbox déjà créé")
+                                    continue
+
                                 slide_h = prs.slide_height
                                 slide_w = prs.slide_width
 
-                                # Dimensions fixes du textbox
+                                # Noms à afficher : un seul fichier, ou tous les fichiers du groupe
+                                if _is_merged:
+                                    _group_filenames = [gi['filename'] for gi in _pos_key_groups[_pos_key]]
+                                    _processed_merged_keys.add(_pos_key)
+                                else:
+                                    _group_filenames = [filename]
+
+                                # Hauteur adaptée au nombre de fichiers dans le groupe
                                 tb_width  = Inches(1.8)
-                                tb_height = Inches(0.6)
+                                tb_height = Inches(0.35) + Inches(0.28) * len(_group_filenames)
 
                                 # Position de base : là où était le shape
                                 clamped_left = left
@@ -5578,24 +5625,39 @@ class EmbeddedFileExtractor:
                                 tf.word_wrap = True
                                 tf.clear()
 
-                                # Ligne 1 : "Voir <nom>"
-                                p = tf.paragraphs[0]
-                                p.text = f"Voir {Path(filename).stem}"
-                                p.font.bold      = True
-                                p.font.size      = font_size
-                                p.font.color.rgb = PPTRGBColor(255, 255, 255)
+                                # Une ligne par fichier (retour à la ligne si groupe de table)
+                                for _fn_idx, _fn in enumerate(_group_filenames):
+                                    if _fn_idx == 0:
+                                        p = tf.paragraphs[0]
+                                    else:
+                                        p = tf.add_paragraph()
+                                    p.text = f"Voir {Path(_fn).stem}"
+                                    p.font.bold      = True
+                                    p.font.size      = font_size
+                                    p.font.color.rgb = PPTRGBColor(255, 255, 255)
 
-                                # Mettre en PREMIER PLAN (dernier dans spTree = devant tout)
+                                # Mettre en PREMIER PLAN (passe finale garantira l'ordre)
                                 sp_elem = txBox.element
                                 sp_tree = sp_elem.getparent()
                                 if sp_tree is not None:
                                     sp_tree.remove(sp_elem)
                                     sp_tree.append(sp_elem)
+                                _added_textboxes.append(txBox.element)
 
-                                self.log(f"    ✅ Shape REMPLACÉ → '{filename}' "
+                                self.log(f"    ✅ Shape REMPLACÉ → {len(_group_filenames)} fichier(s) "
                                         f"(left={clamped_left//914400:.2f}\", top={clamped_top//914400:.2f}\")")
                             except Exception as e:
                                 self.log(f"    ⚠️ Erreur remplacement: {e}")
+
+                    # ── Passe finale z-order : tous les textboxes ajoutés en avant-plan ──
+                    for _tb_elem in _added_textboxes:
+                        try:
+                            _tb_parent = _tb_elem.getparent()
+                            if _tb_parent is not None:
+                                _tb_parent.remove(_tb_elem)
+                                _tb_parent.append(_tb_elem)
+                        except Exception:
+                            pass
 
 #                # ── Slide récapitulative (insérée en 1ère position) ──────────────────
 #                if extracted_files:
