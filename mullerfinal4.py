@@ -4500,12 +4500,25 @@ class EmbeddedFileExtractor:
                         'files_found': len(extracted_files),
                         'status': 'Traité avec succès'
                     })
-        
+
+                else:
+                    # Pas de dossier xl/embeddings/ → aucun fichier incorporé
+                    self.log(f"\n  ℹ️ Aucun dossier embeddings/ → Aucun fichier incorporé")
+                    original_copy = Path(output_dir) / Path(xlsx_path).name
+                    shutil.copy2(xlsx_path, original_copy)
+                    self.log(f"  ✅ Copie créée: {original_copy.name}")
+                    self.add_to_report('processed', {
+                        'file_name': Path(xlsx_path).name,
+                        'file_type': Path(xlsx_path).suffix.upper().replace('.', ''),
+                        'files_found': 0,
+                        'status': 'Aucun fichier incorporé'
+                    })
+
         except Exception as e:
             self.log(f"  ❌ Erreur: {str(e)}")
             import traceback
             self.log(f"  📋 Détails: {traceback.format_exc()}")
-        
+
         return extracted_files
 
 
@@ -7024,12 +7037,27 @@ class EmbeddedFileExtractor:
                     self.log(f"  ⚠️ Format non supporté: {file_ext}")
                     return []
 
+                # ── Fallback universel : dossier vide → copie de l'original ──
+                try:
+                    if output_dir.exists() and not any(output_dir.iterdir()):
+                        shutil.copy2(file_path, output_dir / file_path.name)
+                        self.log(f"  📋 Aucun fichier extrait — copie de l'original : {file_path.name}")
+                except Exception:
+                    pass
+
                 return extracted_files
 
             except Exception as e:
                 self.log(f"  ❌ Erreur traitement: {str(e)}")
                 import traceback
                 self.log(f"  📋 Détails: {traceback.format_exc()}")
+                # Fallback : copier l'original si le dossier de sortie est vide
+                try:
+                    if output_dir.exists() and not any(output_dir.iterdir()):
+                        shutil.copy2(file_path, output_dir / file_path.name)
+                        self.log(f"  📋 Erreur → copie de l'original : {file_path.name}")
+                except Exception:
+                    pass
                 return []
     def _safe_copy2(src, dst, retries=3, delay=2.0):
         import time as _t
