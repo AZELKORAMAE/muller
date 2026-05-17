@@ -866,8 +866,8 @@ class EmbeddedFileExtractor:
 
         SUPPORTED = {
             '.pdf', '.docx', '.doc', '.xlsx', '.xlsm', '.xls',
-            '.pptx', '.ppt', '.msg', '.zip',
-            '.htm', '.html' 
+            '.pptx', '.pptm', '.ppt', '.msg', '.zip',
+            '.htm', '.html'
         }
 
         output_dir = Path(output_dir)
@@ -4676,17 +4676,58 @@ class EmbeddedFileExtractor:
                     self.log(f"\n  📊 Mapping : {len(position_to_location)} position(s) trouvée(s)")
 
                     if not position_to_location:
-                        self.log(f"    ⚠️ Mapping vide - fichiers présents: {[ef.name for ef in embed_list]}")
+                        self.log(f"    ⚠️ Mapping vide — extraction directe de {len(embed_list)} fichier(s) dans embeddings/")
+                        # Fallback : extraire directement chaque fichier dans ppt/embeddings/
+                        fallback_extracted = []
+                        for pos_fb, ef in enumerate(embed_list, start=1):
+                            with open(ef, 'rb') as f:
+                                fb_data = f.read()
+                            if len(fb_data) == 0:
+                                continue
+                            if not self.is_file_not_image(ef.name, fb_data):
+                                continue
+                            if fb_data[:4] == b'PK\x03\x04':
+                                fb_ext = self.detect_office_xml_type(fb_data)
+                            elif fb_data[:4] == b'\xd0\xcf\x11\xe0':
+                                fb_ext = self.detect_file_type(fb_data)
+                            elif fb_data[:4] == b'%PDF':
+                                fb_ext = '.pdf'
+                            else:
+                                fb_ext = self.detect_file_type(fb_data)
+
+                            SUPPORTED_FB = {'.pdf','.docx','.doc','.xlsx','.xlsm','.xls',
+                                            '.pptx','.pptm','.ppt','.msg','.txt',
+                                            '.zip','.7z','.htm','.html'}
+                            if fb_ext not in SUPPORTED_FB:
+                                self.log(f"    ⚠️ Fallback: type non supporté {fb_ext} ({ef.name})")
+                                continue
+
+                            self.extracted_count += 1
+                            fb_name = self._generate_output_name(pptx_path.stem, None, fb_ext)
+                            fb_path = Path(output_dir) / fb_name
+                            with open(fb_path, 'wb') as f:
+                                f.write(fb_data)
+                            self.log(f"    ✅ Fallback extrait: {fb_name}")
+                            fallback_extracted.append({
+                                'position': pos_fb, 'filename': fb_name, 'action': 'replace',
+                                'slide_number': 1, 'shape_index': pos_fb, 'sp_element_id': None
+                            })
+                            self.add_to_report('extracted', {
+                                'source_file': pptx_path.name,
+                                'extracted_file': fb_name,
+                                'position': f'Embed {pos_fb}',
+                                'type': fb_ext, 'status': 'Succès (fallback)'
+                            })
+
                         original_copy = Path(output_dir) / pptx_path.name
-                        shutil.copy2(pptx_path, original_copy)
-                        self.log(f"  ✅ Copie créée: {original_copy.name}")
+                        if not original_copy.exists() or str(original_copy.resolve()) != str(pptx_path.resolve()):
+                            shutil.copy2(pptx_path, original_copy)
                         self.add_to_report('processed', {
-                            'file_name': pptx_path.name,
-                            'file_type': file_type_label,
-                            'files_found': 0,
-                            'status': 'Mapping vide - copie originale'
+                            'file_name': pptx_path.name, 'file_type': file_type_label,
+                            'files_found': len(fallback_extracted),
+                            'status': 'Fallback (mapping vide)'
                         })
-                        return []
+                        return fallback_extracted
 
                     # ========================================
                     # ÉTAPE 2 : TRAITER CHAQUE FICHIER
@@ -6948,6 +6989,8 @@ class EmbeddedFileExtractor:
                         self.log(f"  ✅ Fichier converti, traitement du nouveau format")
                         file_path = converted_path
                         file_ext = file_path.suffix.lower()
+                        # Marquer le fichier converti comme traité (évite double récursion)
+                        self._processed_absolute_paths.add(str(file_path.resolve()))
                         # Supprimer toute copie legacy déjà présente dans output_dir
                         legacy_in_output = output_dir / original_legacy_name
                         if legacy_in_output.exists():
