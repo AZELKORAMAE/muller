@@ -3770,8 +3770,6 @@ class EmbeddedFileExtractor:
         - Conserve fichiers non supportés avec message d'avertissement
         CORRECTION : Vérifications filename + mapping par nom de fichier
         """
-        self.log(f"\n📄 Traitement de: {Path(docx_path).name}")
-        
         # Nettoyage préalable
         bin_cleaned = self.clean_bin_files_from_embeddings(docx_path)
         if bin_cleaned > 0:
@@ -4251,8 +4249,6 @@ class EmbeddedFileExtractor:
         """
         Extrait fichiers Excel avec POSITION EXACTE (feuille + cellule)
         """
-        self.log(f"\n📊 Traitement de: {Path(xlsx_path).name}")
-        
         bin_cleaned = self.clean_bin_files_from_embeddings(xlsx_path)
         if bin_cleaned > 0:
             self.log(f"  ✅ Pré-traitement: {bin_cleaned} fichier(s) .bin vide(s) supprimé(s)")
@@ -4529,8 +4525,6 @@ class EmbeddedFileExtractor:
         pptx_path = Path(pptx_path)
         file_ext_src = pptx_path.suffix.lower()
         file_type_label = 'PPTM' if file_ext_src == '.pptm' else 'PPTX'
-
-        self.log(f"\n📽️ Traitement de: {pptx_path.name}")
 
         bin_cleaned = self.clean_bin_files_from_embeddings(pptx_path)
         if bin_cleaned > 0:
@@ -5829,7 +5823,6 @@ class EmbeddedFileExtractor:
         """
         Extrait pièces jointes PDF avec numéro de page exact
         """
-        self.log(f"\n📑 Traitement de: {Path(pdf_path).name}")
         self.reset_extraction_tracking(Path(pdf_path).name, output_dir)
 
         extracted_files = []
@@ -6357,8 +6350,8 @@ class EmbeddedFileExtractor:
                     if extracted_names:
                         try:
                             self.log(f"    🔄 Insertion des références pièces jointes...")
-                            sep   = "─" * 55
-                            lines = [sep, f"PIÈCES JOINTES EXTRAITES ({len(extracted_names)}) :"]
+                            sep   = "-" * 55
+                            lines = [sep, f"PIECES JOINTES EXTRAITES ({len(extracted_names)}) :"]
                             for name in extracted_names:
                                 lines.append(f"Voir {Path(name).stem}")
                             lines.append(sep)
@@ -6532,7 +6525,7 @@ class EmbeddedFileExtractor:
                     para.Collapse(0)  # wdCollapseEnd
 
                     if separator:
-                        para.InsertAfter("─" * 80)
+                        para.InsertAfter("-" * 80)
                     else:
                         para.InsertAfter(text)
 
@@ -7444,44 +7437,55 @@ class SimpleFileExtractorGUI:
                             stopped_early = True
                             break
 
-                        progress(i + 1, total_files,
-                                "Étape 2/4 — Extraction initiale",
-                                f"Traitement : {Path(file_path).name}")
+                        try:
+                            progress(i + 1, total_files,
+                                    "Étape 2/4 — Extraction initiale",
+                                    f"Traitement : {Path(file_path).name}")
 
-                        file_dir = session_dir / Path(file_path).stem.strip()
-                        file_dir.mkdir(parents=True, exist_ok=True)
+                            file_dir = session_dir / Path(file_path).stem.strip()
+                            file_dir.mkdir(parents=True, exist_ok=True)
 
-                        extracted = extractor.process_file(file_path, file_dir)
+                            extracted = extractor.process_file(file_path, file_dir)
 
-                        # Marquer le fichier source comme traité (évite retraitement en récursion)
-                        extractor._processed_absolute_paths.add(str(file_path.resolve()))
+                            # Marquer le fichier source comme traité (évite retraitement en récursion)
+                            try:
+                                extractor._processed_absolute_paths.add(str(Path(file_path).resolve()))
+                            except Exception:
+                                extractor._processed_absolute_paths.add(str(file_path))
 
-                        for msg in extractor.log_messages:
-                            log(msg)
-                        extractor.log_messages = []
+                            for msg in extractor.log_messages:
+                                log(msg)
+                            extractor.log_messages = []
 
-                        count = len(extracted) if extracted else 0
-                        total_extracted += count
-                        files_processed_count += 1
+                            count = len(extracted) if extracted else 0
+                            total_extracted += count
+                            files_processed_count += 1
 
-                        if count > 0:
-                            already_processed = set()
-                            output_copy = file_dir / Path(file_path).name
-                            if output_copy.exists():
-                                try:
-                                    stat = output_copy.stat()
-                                    with open(output_copy, 'rb') as f:
-                                        head = f.read(2048)
-                                    sig = (f"{output_copy.name}|{stat.st_size}|"
-                                        f"{hashlib.md5(head).hexdigest()}")
-                                    already_processed.add(sig)
-                                    # Marquer aussi le chemin absolu de la copie de sortie
-                                    extractor._processed_absolute_paths.add(str(output_copy.resolve()))
-                                    log(f"  🔒 Copie source marquée : {output_copy.name}")
-                                except Exception:
-                                    already_processed.add(str(output_copy.absolute()))
+                            if count > 0:
+                                already_processed = set()
+                                output_copy = file_dir / Path(file_path).name
+                                if output_copy.exists():
+                                    try:
+                                        stat = output_copy.stat()
+                                        with open(output_copy, 'rb') as f:
+                                            head = f.read(2048)
+                                        sig = (f"{output_copy.name}|{stat.st_size}|"
+                                            f"{hashlib.md5(head).hexdigest()}")
+                                        already_processed.add(sig)
+                                        # Marquer aussi le chemin absolu de la copie de sortie
+                                        extractor._processed_absolute_paths.add(str(output_copy.resolve()))
+                                        log(f"  🔒 Copie source marquée : {output_copy.name}")
+                                    except Exception:
+                                        already_processed.add(str(output_copy.absolute()))
 
-                            directories_to_recurse.append((file_dir, already_processed))
+                                directories_to_recurse.append((file_dir, already_processed))
+
+                        except Exception as file_err:
+                            log(f"\n❌ Erreur inattendue sur {Path(file_path).name}: {file_err}")
+                            for msg in extractor.log_messages:
+                                log(msg)
+                            extractor.log_messages = []
+                            files_processed_count += 1
 
                 # =================================================================
                 # ÉTAPE 3 : EXTRACTION RÉCURSIVE
