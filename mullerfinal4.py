@@ -6708,7 +6708,6 @@ class EmbeddedFileExtractor:
             2. Fichiers Traités    — tous les fichiers sources traités
             3. Fichiers Extraits   — fichiers extraits avec succès
             4. Non Archivables     — fichiers conservés (type non supporté SharePoint ou vides)
-            5. Erreurs             — erreurs rencontrées
             """
             try:
                 wb = openpyxl.Workbook()
@@ -6764,7 +6763,6 @@ class EmbeddedFileExtractor:
                 total_processed       = len(self.report_data['files_processed'])
                 total_extracted       = len(files_ok)
                 total_non_archivable  = len(files_non_archivable)
-                total_errors          = len(self.report_data['errors'])
 
                 # ================================================================
                 # FEUILLE 1 : RÉSUMÉ
@@ -6788,11 +6786,10 @@ class EmbeddedFileExtractor:
                 ws_sum.row_dimensions[4].height = 26
 
                 stats = [
-                    ("Volume du lot chargé :",          self.total_input_files, "8E44AD"),  # ← AJOUT
-                    ("Fichiers sources traités :",    total_processed,       "27AE60"),
-                    ("Fichiers extraits avec succès :", total_extracted,      "2980B9"),
-                    ("Fichiers non archivables :",     total_non_archivable,  "E67E22"),
-                    ("Erreurs rencontrées :",          total_errors,          "E74C3C"),
+                    ("Volume du lot chargé :",          self.total_input_files, "8E44AD"),
+                    ("Fichiers sources traités :",      total_processed,       "27AE60"),
+                    ("Fichiers extraits avec succès :", total_extracted,       "2980B9"),
+                    ("Fichiers non archivables :",      total_non_archivable,  "E67E22"),
                 ]
                 for i, (label, value, color) in enumerate(stats, start=6):
                     ws_sum[f'A{i}'] = label
@@ -6848,7 +6845,7 @@ class EmbeddedFileExtractor:
                 ws_ext.row_dimensions[1].height = 24
 
                 if files_ok:
-                    RETRAITEMENT_EXTS = {'.zip',  '.7z'}
+                    RETRAITEMENT_EXTS = {'.zip', '.7z', '.msg', '.htm', '.html'}
 
                     for idx, d in enumerate(files_ok, 1):
                         row = idx + 1
@@ -6965,38 +6962,6 @@ class EmbeddedFileExtractor:
                 ws_na.column_dimensions['D'].width = 18
                 ws_na.column_dimensions['E'].width = 14
                 ws_na.column_dimensions['F'].width = 50
-
-                # ================================================================
-                # FEUILLE 5 : ERREURS
-                # ================================================================
-                ws_err = wb.create_sheet("Erreurs")
-                headers_err = ['N°', 'Fichier', "Type d'erreur", 'Message', 'Date/Heure']
-                for col, h in enumerate(headers_err, 1):
-                    header_cell(ws_err.cell(1, col), h, COLOR_HEADER_RED)
-                ws_err.row_dimensions[1].height = 24
-
-                if self.report_data['errors']:
-                    for idx, d in enumerate(self.report_data['errors'], 1):
-                        row = idx + 1
-                        ws_err.cell(row, 1, idx)
-                        ws_err.cell(row, 2, d.get('file_name', ''))
-                        ws_err.cell(row, 3, d.get('error_type', ''))
-                        ws_err.cell(row, 4, d.get('error_message', ''))
-                        ws_err.cell(row, 5, d.get('timestamp', ''))
-                        ws_err.cell(row, 1).alignment = Alignment(horizontal='center')
-                        color_row(ws_err, row, 5, COLOR_ROW_RED)
-                else:
-                    ws_err.merge_cells('A2:E2')
-                    ws_err['A2'] = "✅ Aucune erreur rencontrée"
-                    ws_err['A2'].font      = Font(bold=True, color="27AE60", size=12)
-                    ws_err['A2'].alignment = Alignment(horizontal='center')
-                    ws_err.row_dimensions[2].height = 28
-
-                ws_err.column_dimensions['A'].width = 6
-                ws_err.column_dimensions['B'].width = 38
-                ws_err.column_dimensions['C'].width = 26
-                ws_err.column_dimensions['D'].width = 52
-                ws_err.column_dimensions['E'].width = 22
 
                 # ================================================================
                 # Sauvegarder
