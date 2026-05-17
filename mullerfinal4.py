@@ -4518,6 +4518,14 @@ class EmbeddedFileExtractor:
             self.log(f"  ❌ Erreur: {str(e)}")
             import traceback
             self.log(f"  📋 Détails: {traceback.format_exc()}")
+            # Copie de secours si dossier de sortie vide
+            try:
+                original_copy = Path(output_dir) / Path(xlsx_path).name
+                if not original_copy.exists():
+                    shutil.copy2(xlsx_path, original_copy)
+                    self.log(f"  ⚠️ Erreur → copie de l'original créée: {original_copy.name}")
+            except Exception:
+                pass
 
         return extracted_files
 
@@ -4997,6 +5005,14 @@ class EmbeddedFileExtractor:
                 'error_message': str(e),
                 'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             })
+            # Copie de secours si dossier de sortie vide
+            try:
+                original_copy = Path(output_dir) / pptx_path.name
+                if not original_copy.exists():
+                    shutil.copy2(pptx_path, original_copy)
+                    self.log(f"  ⚠️ Erreur → copie de l'original créée: {original_copy.name}")
+            except Exception:
+                pass
 
         return extracted_files
     def validate_ole_mapping(self, docx_path, position_mapping):
@@ -5296,6 +5312,13 @@ class EmbeddedFileExtractor:
             self.log(f"  ❌ Erreur: {str(e)}")
             import traceback
             self.log(f"  📋 Détails: {traceback.format_exc()}")
+            # Copie de secours (identique à create_modified_docx_exact_positions)
+            try:
+                modified_path = Path(output_dir) / Path(original_path).name
+                shutil.copy2(original_path, modified_path)
+                self.log(f"  ⚠️ Copie de l'original créée")
+            except Exception:
+                pass
     def create_modified_pptx_exact_positions(self, original_path, output_dir, extracted_files, temp_path):
             """
             Crée PowerPoint modifié en CONSERVANT LES POSITIONS EXACTES.
@@ -5978,10 +6001,18 @@ class EmbeddedFileExtractor:
             self.log(f"  ❌ Erreur: {str(e)}")
             import traceback
             self.log(f"  📋 Détails: {traceback.format_exc()}")
-        
+            # Copie de secours si dossier de sortie vide
+            try:
+                original_copy = Path(output_dir) / Path(pdf_path).name
+                if not original_copy.exists():
+                    shutil.copy2(pdf_path, original_copy)
+                    self.log(f"  ⚠️ Erreur → copie de l'original créée: {original_copy.name}")
+            except Exception:
+                pass
+
         return extracted_files
 
-        
+
     def create_modified_pdf_exact_positions(self, original_path, output_dir, extracted_files):
         """
         Crée PDF modifié :
