@@ -3776,6 +3776,7 @@ class EmbeddedFileExtractor:
             self.log(f"  ✅ Pré-traitement: {bin_cleaned} fichier(s) .bin vide(s) supprimé(s)")
         
         self.reset_extraction_tracking(Path(docx_path).name, output_dir)
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
 
         extracted_files = []
 
@@ -4254,6 +4255,7 @@ class EmbeddedFileExtractor:
             self.log(f"  ✅ Pré-traitement: {bin_cleaned} fichier(s) .bin vide(s) supprimé(s)")
         
         self.reset_extraction_tracking(Path(xlsx_path).name, output_dir)
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
 
         extracted_files = []
 
@@ -4552,6 +4554,7 @@ class EmbeddedFileExtractor:
             self.log(f"  ✅ Pré-traitement: {bin_cleaned} fichier(s) .bin vide(s) supprimé(s)")
 
         self.reset_extraction_tracking(pptx_path.name, output_dir)
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
 
         extracted_files = []
 
@@ -5860,6 +5863,7 @@ class EmbeddedFileExtractor:
         Extrait pièces jointes PDF avec numéro de page exact
         """
         self.reset_extraction_tracking(Path(pdf_path).name, output_dir)
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
 
         extracted_files = []
 
@@ -7501,7 +7505,9 @@ class SimpleFileExtractorGUI:
                                     "Étape 2/4 — Extraction initiale",
                                     f"Traitement : {Path(file_path).name}")
 
-                            file_dir = session_dir / Path(file_path).stem.strip()
+                            # Tronquer à 40 chars pour éviter MAX_PATH (260) sur Windows
+                            stem_safe = re.sub(r'[<>:"/\\|?*]', '_', Path(file_path).stem.strip())[:40]
+                            file_dir = session_dir / f"{i+1:02d}_{stem_safe}"
                             file_dir.mkdir(parents=True, exist_ok=True)
 
                             extracted = extractor.process_file(file_path, file_dir)
