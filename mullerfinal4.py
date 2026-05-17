@@ -5389,8 +5389,10 @@ class EmbeddedFileExtractor:
                                 break
                         return _top
 
-                    # Track all added textboxes for a final z-order pass after the loop
-                    _added_textboxes = []
+                    # Track names of added textboxes for reliable z-order identification
+                    # (lxml proxy id() is not stable — we use shape name instead)
+                    _added_tb_names = []
+                    _tb_name_seq = [0]   # mutable counter accessible in nested scope
 
                     # ── Pre-grouping: detect 'replace' items at the same position ──
                     # (multiple OLE objects in the same table cell share similar left/top)
@@ -5484,13 +5486,10 @@ class EmbeddedFileExtractor:
                                 p.font.color.rgb = PPTRGBColor(255, 200, 0)
                                 tf.word_wrap = True
 
-                                # Premier plan (final pass will re-ensure ordering)
-                                sp_elem = txBox.element
-                                sp_tree = sp_elem.getparent()
-                                if sp_tree is not None:
-                                    sp_tree.remove(sp_elem)
-                                    sp_tree.append(sp_elem)
-                                _added_textboxes.append(txBox.element)
+                                _tb_nm = f"_mlr_tb_{_tb_name_seq[0]}"
+                                _tb_name_seq[0] += 1
+                                txBox.name = _tb_nm
+                                _added_tb_names.append(_tb_nm)
 
                                 self.log(f"    ✅ Message VIDE ajouté au-dessus")
                             except Exception as e:
@@ -5530,13 +5529,10 @@ class EmbeddedFileExtractor:
                                 p.font.size  = PPTPt(9)
                                 p.font.color.rgb = PPTRGBColor(255, 200, 0)
 
-                                # Premier plan (final pass will re-ensure ordering)
-                                sp_elem = txBox.element
-                                sp_tree = sp_elem.getparent()
-                                if sp_tree is not None:
-                                    sp_tree.remove(sp_elem)
-                                    sp_tree.append(sp_elem)
-                                _added_textboxes.append(txBox.element)
+                                _tb_nm = f"_mlr_tb_{_tb_name_seq[0]}"
+                                _tb_name_seq[0] += 1
+                                txBox.name = _tb_nm
+                                _added_tb_names.append(_tb_nm)
 
                                 self.log(f"    ✅ Message NON SUPPORTÉ ajouté à droite du shape")
                             except Exception as e:
@@ -5636,28 +5632,41 @@ class EmbeddedFileExtractor:
                                     p.font.size      = font_size
                                     p.font.color.rgb = PPTRGBColor(255, 255, 255)
 
-                                # Mettre en PREMIER PLAN (passe finale garantira l'ordre)
-                                sp_elem = txBox.element
-                                sp_tree = sp_elem.getparent()
-                                if sp_tree is not None:
-                                    sp_tree.remove(sp_elem)
-                                    sp_tree.append(sp_elem)
-                                _added_textboxes.append(txBox.element)
+                                _tb_nm = f"_mlr_tb_{_tb_name_seq[0]}"
+                                _tb_name_seq[0] += 1
+                                txBox.name = _tb_nm
+                                _added_tb_names.append(_tb_nm)
 
                                 self.log(f"    ✅ Shape REMPLACÉ → {len(_group_filenames)} fichier(s) "
                                         f"(left={clamped_left//914400:.2f}\", top={clamped_top//914400:.2f}\")")
                             except Exception as e:
                                 self.log(f"    ⚠️ Erreur remplacement: {e}")
 
-                    # ── Passe finale z-order : tous les textboxes ajoutés en avant-plan ──
-                    for _tb_elem in _added_textboxes:
+                    # ── Passe finale z-order : reconstruire spTree avec nos textboxes EN DERNIER ──
+                    # Utilise slide.shapes._spTree directement + identification par nom (pas par id() lxml)
+                    if _added_tb_names:
                         try:
-                            _tb_parent = _tb_elem.getparent()
-                            if _tb_parent is not None:
-                                _tb_parent.remove(_tb_elem)
-                                _tb_parent.append(_tb_elem)
-                        except Exception:
-                            pass
+                            _spt = slide.shapes._spTree
+                            _tb_name_set = set(_added_tb_names)
+
+                            def _cNvPr_name(elem):
+                                for _el in elem.iter():
+                                    tag = _el.tag
+                                    if tag.endswith('}cNvPr') or tag == 'cNvPr':
+                                        return _el.get('name', '')
+                                return ''
+
+                            _all_ch = list(_spt)
+                            _non_tb_ch = [e for e in _all_ch if _cNvPr_name(e) not in _tb_name_set]
+                            _tb_ch     = [e for e in _all_ch if _cNvPr_name(e) in _tb_name_set]
+                            if _tb_ch:
+                                for _e in _all_ch:
+                                    _spt.remove(_e)
+                                for _e in _non_tb_ch + _tb_ch:
+                                    _spt.append(_e)
+                                self.log(f"    ✅ Z-order: {len(_tb_ch)} textbox(es) placés en avant-plan absolu")
+                        except Exception as _ze:
+                            self.log(f"    ⚠️ Passe z-order: {_ze}")
 
 #                # ── Slide récapitulative (insérée en 1ère position) ──────────────────
 #                if extracted_files:
