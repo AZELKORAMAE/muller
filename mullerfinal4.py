@@ -5629,6 +5629,32 @@ class EmbeddedFileExtractor:
                                     sp.getparent().remove(sp)
                                     self.log(f"    ✅ Shape OLE supprimé")
 
+                                # ── Supprimer les images-icônes à la même position ──
+                                # Les icônes OLE sont parfois des <p:pic> séparés dans spTree.
+                                # On supprime tout <p:pic> dont le centre est dans la zone du OLE.
+                                _margin_ico = int(914400 * 0.25)   # 0.25 inch
+                                _ole_r = left + max(width,  Inches(0.1))
+                                _ole_b = top  + max(height, Inches(0.1))
+                                for _ico_shape in list(slide.shapes):
+                                    try:
+                                        if _ico_shape.shape_id == (_sid or -1):
+                                            continue
+                                        _ico_name = getattr(_ico_shape, 'name', '')
+                                        if _ico_name.startswith('_mlr_'):
+                                            continue
+                                        _cx = _ico_shape.left + _ico_shape.width  / 2
+                                        _cy = _ico_shape.top  + _ico_shape.height / 2
+                                        if ((left - _margin_ico) <= _cx <= (_ole_r + _margin_ico) and
+                                            (top  - _margin_ico) <= _cy <= (_ole_b + _margin_ico)):
+                                            _tag = _ico_shape.element.tag
+                                            if _tag.endswith('}pic') or _tag == 'pic':
+                                                _ico_shape.element.getparent().remove(
+                                                    _ico_shape.element)
+                                                self.log(
+                                                    f"    ✅ Image-icône OLE supprimée: {_ico_name}")
+                                    except Exception:
+                                        pass
+
                                 # Si ce groupe de table a déjà eu son textbox fusionné, ne pas en créer un autre
                                 if _is_merged and _pos_key in _processed_merged_keys:
                                     self.log(f"    ℹ️ Groupe table fusionné: textbox déjà créé")
