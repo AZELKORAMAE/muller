@@ -5629,40 +5629,75 @@ class EmbeddedFileExtractor:
                                     sp.getparent().remove(sp)
                                     self.log(f"    ✅ Shape OLE supprimé")
 
-                                # ── Supprimer les images-icônes à la même position ──
-                                # Les icônes OLE peuvent être <p:pic> OU <p:sp> avec blipFill.
-                                # On supprime tout élément IMAGE dont le centre est dans la zone du OLE.
-                                _margin_ico = int(914400 * 0.25)   # 0.25 inch
+                                # ── Supprimer TOUTES les formes OLE/icône à la même position ──
+                                # Critères d'identification (du plus fiable au moins fiable) :
+                                #   1. shape_type PICTURE / OLE / LINKED_PICTURE
+                                #   2. tag XML == <p:pic> ou <p:graphicFrame>
+                                #   3. <p:sp> avec un <blipFill> (image de fond)
+                                # On préserve : nos textboxes (_mlr_), formes avec texte non vide.
+                                _margin_ico = int(914400 * 0.3)   # 0.3 inch
                                 _ole_r = left + max(width,  Inches(0.1))
                                 _ole_b = top  + max(height, Inches(0.1))
-                                for _ico_shape in list(slide.shapes):
+                                try:
+                                    from pptx.enum.shapes import MSO_SHAPE_TYPE as _MSO
+                                    _DELETABLE_TYPES = {
+                                        _MSO.PICTURE,
+                                        _MSO.EMBEDDED_OLE_OBJECT,
+                                        _MSO.LINKED_OLE_OBJECT,
+                                        _MSO.LINKED_PICTURE,
+                                    }
+                                except Exception:
+                                    _DELETABLE_TYPES = {13, 7, 10, 11}
+
+                                for _ico_s in list(slide.shapes):
                                     try:
-                                        if _ico_shape.shape_id == (_sid or -1):
+                                        if _ico_s.shape_id == (_sid or -1):
                                             continue
-                                        _ico_name = getattr(_ico_shape, 'name', '')
-                                        if _ico_name.startswith('_mlr_'):
+                                        _ico_nm = getattr(_ico_s, 'name', '')
+                                        if _ico_nm.startswith('_mlr_'):
                                             continue
-                                        _cx = _ico_shape.left + _ico_shape.width  / 2
-                                        _cy = _ico_shape.top  + _ico_shape.height / 2
+                                        # Filtre position (centre dans la zone OLE)
+                                        _cx = _ico_s.left + _ico_s.width  / 2
+                                        _cy = _ico_s.top  + _ico_s.height / 2
                                         if not ((left - _margin_ico) <= _cx <= (_ole_r + _margin_ico) and
                                                 (top  - _margin_ico) <= _cy <= (_ole_b + _margin_ico)):
                                             continue
-                                        _tag = _ico_shape.element.tag
-                                        # Cas 1 : élément <p:pic> (image pure)
-                                        _is_pic = _tag.endswith('}pic') or _tag == 'pic'
-                                        # Cas 2 : élément <p:sp> avec blipFill (sp rempli par une image)
-                                        _is_sp_blip = False
-                                        if not _is_pic and (_tag.endswith('}sp') or _tag == 'sp'):
-                                            for _sub in _ico_shape.element.iter():
+                                        # Préserver les formes avec du texte visible
+                                        try:
+                                            if (_ico_s.has_text_frame and
+                                                    _ico_s.text_frame.text.strip()):
+                                                continue
+                                        except Exception:
+                                            pass
+                                        # Décider si on supprime
+                                        _del = False
+                                        # Critère 1 : shape_type
+                                        try:
+                                            if _ico_s.shape_type in _DELETABLE_TYPES:
+                                                _del = True
+                                        except Exception:
+                                            pass
+                                        # Critère 2 : tag XML
+                                        if not _del:
+                                            _xtag = _ico_s.element.tag
+                                            if (_xtag.endswith('}pic')
+                                                    or _xtag == 'pic'
+                                                    or _xtag.endswith('}graphicFrame')
+                                                    or _xtag == 'graphicFrame'):
+                                                _del = True
+                                        # Critère 3 : blipFill dans le XML
+                                        if not _del:
+                                            for _sub in _ico_s.element.iter():
                                                 _st = _sub.tag
-                                                if _st.endswith('}blipFill') or _st == 'blipFill':
-                                                    _is_sp_blip = True
+                                                if (_st.endswith('}blipFill')
+                                                        or _st == 'blipFill'):
+                                                    _del = True
                                                     break
-                                        if _is_pic or _is_sp_blip:
-                                            _ico_shape.element.getparent().remove(
-                                                _ico_shape.element)
+                                        if _del:
+                                            _ico_s.element.getparent().remove(
+                                                _ico_s.element)
                                             self.log(
-                                                f"    ✅ Image-icône OLE supprimée: {_ico_name}")
+                                                f"    ✅ Élément OLE/icône supprimé: {_ico_nm}")
                                     except Exception:
                                         pass
 
