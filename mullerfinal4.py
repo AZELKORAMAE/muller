@@ -6998,7 +6998,7 @@ class EmbeddedFileExtractor:
                 ws_ext.row_dimensions[1].height = 24
 
                 if files_ok:
-                    RETRAITEMENT_EXTS = {'.zip', '.7z', '.msg', '.htm', '.html'}
+                    RETRAITEMENT_EXTS = {'.zip', '.7z', '.htm', '.html'}
 
                     for idx, d in enumerate(files_ok, 1):
                         row = idx + 1
@@ -7624,8 +7624,10 @@ class SimpleFileExtractorGUI:
                                     f"Traitement : {Path(file_path).name}")
 
                             # Tronquer à 40 chars pour éviter MAX_PATH (260) sur Windows
-                            stem_safe = re.sub(r'[<>:"/\\|?*]', '_', Path(file_path).stem.strip())[:40]
-                            file_dir = session_dir / f"{i+1:02d}_{stem_safe}"
+                            stem_safe = re.sub(r'[<>:"/\\|?*]', '_', Path(file_path).stem.strip())[:80]
+                            file_dir = session_dir / stem_safe
+                            if file_dir.exists():
+                                file_dir = session_dir / f"{stem_safe}_{i+1}"
                             file_dir.mkdir(parents=True, exist_ok=True)
 
                             extracted = extractor.process_file(file_path, file_dir)
