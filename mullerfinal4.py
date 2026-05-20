@@ -5786,14 +5786,6 @@ class EmbeddedFileExtractor:
                                     clamped_left, clamped_top, tb_width, tb_height
                                 )
 
-                                # Fond gris foncé
-                                txBox.fill.solid()
-                                txBox.fill.fore_color.rgb = PPTRGBColor(50, 50, 50)
-
-                                # Bordure rouge
-                                txBox.line.color.rgb = PPTRGBColor(200, 0, 0)
-                                txBox.line.width = PPTPt(1.5)
-
                                 tf = txBox.text_frame
                                 tf.word_wrap = True
                                 tf.clear()
@@ -5807,7 +5799,7 @@ class EmbeddedFileExtractor:
                                     p.text = f"Voir {Path(_fn).stem}"
                                     p.font.bold      = True
                                     p.font.size      = font_size
-                                    p.font.color.rgb = PPTRGBColor(255, 255, 255)
+                                    p.font.color.rgb = PPTRGBColor(0, 0, 0)
 
                                 _tb_nm = f"_mlr_tb_{_tb_name_seq[0]}"
                                 _tb_name_seq[0] += 1
