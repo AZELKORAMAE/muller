@@ -5799,7 +5799,7 @@ class EmbeddedFileExtractor:
                                     p.text = f"Voir {Path(_fn).stem}"
                                     p.font.bold      = True
                                     p.font.size      = font_size
-                                    p.font.color.rgb = PPTRGBColor(0, 0, 0)
+                                    p.font.color.rgb = PPTRGBColor(255, 0, 0)
 
                                 _tb_nm = f"_mlr_tb_{_tb_name_seq[0]}"
                                 _tb_name_seq[0] += 1
