@@ -5631,13 +5631,28 @@ class EmbeddedFileExtractor:
                                 # Extract VML spid BEFORE deletion (mc:Choice path)
                                 _vml_spid = None
                                 if sp is not None:
+                                    # Method 1: iterate XML tree
                                     for _sub in sp.iter():
                                         _stag = _sub.tag
                                         if _stag.endswith('}oleObj') or _stag == 'oleObj':
                                             _vml_spid = _sub.get('spid')
                                             break
+                                    # Method 2: fallback — scan raw XML bytes for spid="..."
+                                    if not _vml_spid:
+                                        try:
+                                            import re as _re_spid
+                                            from lxml import etree as _lxml_sp
+                                            _raw = _lxml_sp.tostring(sp, encoding='unicode')
+                                            _m = _re_spid.search(r'\bspid\s*=\s*["\']([^"\']+)["\']', _raw)
+                                            if _m:
+                                                _vml_spid = _m.group(1)
+                                        except Exception:
+                                            pass
                                     if _vml_spid:
                                         _vml_spids_to_remove.add(_vml_spid)
+                                        self.log(f"    🔍 spid VML capturé: {_vml_spid}")
+                                    else:
+                                        self.log(f"    ⚠️ Aucun spid trouvé dans le shape OLE")
                                 if sp is not None and sp.getparent() is not None:
                                     sp.getparent().remove(sp)
                                     self.log(f"    ✅ Shape OLE supprimé"
@@ -5905,85 +5920,104 @@ class EmbeddedFileExtractor:
                     pass
 
     def _remove_vml_ole_shapes(self, pptx_path, vml_spids):
-        """Post-process saved PPTX ZIP to remove VML OLE icon shapes stored in vmlDrawingN.vml.
+        """Post-process saved PPTX ZIP to remove VML OLE icon shapes from vmlDrawingN.vml.
 
-        When an OLE object uses the mc:Choice/VML path (modern PowerPoint), the visible icon
-        is NOT in spTree but in a separate vmlDrawing file.  Deleting the graphicFrame via
-        python-pptx leaves the icon intact.  This method opens the saved ZIP, strips the
-        matching <v:shape> elements by their spid, and rewrites the ZIP in-place.
+        When an OLE object uses mc:Choice/VML, the icon lives in a separate .vml file
+        inside the ZIP — python-pptx cannot touch it.  We rewrite the ZIP here.
         """
         import zipfile
-        import re
-        from lxml import etree
+        import re as _re
 
         if not vml_spids:
             return
 
         pptx_path = Path(pptx_path)
         tmp_path  = pptx_path.with_suffix('.tmp_vml_fix')
-        VML_NS    = 'urn:schemas-microsoft-com:vml'
-        removed   = 0
+        total_removed = 0
 
         try:
             with zipfile.ZipFile(pptx_path, 'r') as zin:
-                with zipfile.ZipFile(tmp_path, 'w', compression=zipfile.ZIP_DEFLATED) as zout:
+                all_names = zin.namelist()
+                vml_names = [n for n in all_names if n.lower().endswith('.vml')]
+                self.log(f"    🔍 Fichiers VML dans ZIP: {vml_names if vml_names else 'aucun'}")
+                self.log(f"    🔍 Spids à supprimer: {sorted(vml_spids)}")
+
+                with zipfile.ZipFile(tmp_path, 'w') as zout:
                     for item in zin.infolist():
                         data = zin.read(item.name)
 
-                        if item.name.endswith('.vml'):
+                        if item.name.lower().endswith('.vml'):
                             try:
-                                parser = etree.XMLParser(recover=True)
-                                root   = etree.fromstring(data, parser)
-                                hit    = False
-                                for shape_el in root.findall(f'.//{{{VML_NS}}}shape'):
-                                    if shape_el.get('id', '') in vml_spids:
-                                        parent = shape_el.getparent()
-                                        if parent is not None:
-                                            parent.remove(shape_el)
-                                            removed += 1
-                                            hit = True
-                                            self.log(f"    ✅ VML icône supprimée: {shape_el.get('id')} ({item.name})")
-                                if hit:
-                                    data = etree.tostring(
-                                        root,
-                                        xml_declaration=True,
-                                        encoding='UTF-8',
-                                        standalone=True,
+                                text = data.decode('utf-8', errors='replace')
+                                # Log a preview so we can see the content
+                                preview = text.replace('\n', ' ').replace('\r', '')[:400]
+                                self.log(f"    📄 {item.name}: {preview}")
+
+                                orig_text = text
+                                for _spid in vml_spids:
+                                    # Pattern 1: <v:shape id="SPID" ...>...</v:shape>
+                                    _pat = _re.compile(
+                                        r'<v:shape\b[^>]*\bid\s*=\s*["\']'
+                                        + _re.escape(_spid)
+                                        + r'["\'][^>]*>.*?</v:shape\s*>',
+                                        _re.DOTALL | _re.IGNORECASE,
                                     )
-                            except Exception as _lxml_err:
-                                # Fallback: regex removal
-                                self.log(f"    ⚠️ lxml VML ({_lxml_err}), fallback regex")
-                                try:
-                                    text_vml = data.decode('utf-8', errors='replace')
-                                    for _spid in vml_spids:
-                                        _pat = re.compile(
+                                    text, _n = _pat.subn('', text)
+                                    if _n:
+                                        total_removed += _n
+                                        self.log(f"    ✅ VML shape supprimé (regex): {_spid}")
+                                    else:
+                                        # Pattern 2: self-closing <v:shape id="SPID" .../>
+                                        _pat2 = _re.compile(
                                             r'<v:shape\b[^>]*\bid\s*=\s*["\']'
-                                            + re.escape(_spid)
-                                            + r'["\'][^>]*>[\s\S]*?</v:shape\s*>',
-                                            re.IGNORECASE,
+                                            + _re.escape(_spid)
+                                            + r'["\'][^>]*/\s*>',
+                                            _re.DOTALL | _re.IGNORECASE,
                                         )
-                                        text_vml, _n = _pat.subn('', text_vml)
-                                        if _n:
-                                            removed += _n
-                                            self.log(f"    ✅ VML icône supprimée (regex): {_spid}")
-                                    data = text_vml.encode('utf-8')
-                                except Exception as _re_err:
-                                    self.log(f"    ⚠️ Regex VML échoué: {_re_err}")
+                                        text, _n2 = _pat2.subn('', text)
+                                        if _n2:
+                                            total_removed += _n2
+                                            self.log(f"    ✅ VML shape (self-closing) supprimé: {_spid}")
+                                        else:
+                                            self.log(f"    ⚠️ Spid '{_spid}' non trouvé dans {item.name}")
 
-                        zout.writestr(item, data)
+                                if text != orig_text:
+                                    data = text.encode('utf-8')
 
-            if removed > 0:
-                pptx_path.unlink()
-                tmp_path.rename(pptx_path)
-                self.log(f"    ✅ PPTX recréé sans icône(s) VML ({removed} supprimée(s))")
+                            except Exception as _ve:
+                                self.log(f"    ⚠️ Erreur traitement VML {item.name}: {_ve}")
+
+                        # Preserve original compression for each entry
+                        info_out = zipfile.ZipInfo(item.filename)
+                        info_out.compress_type = item.compress_type
+                        info_out.date_time     = item.date_time
+                        zout.writestr(info_out, data)
+
+            if total_removed > 0:
+                try:
+                    pptx_path.unlink()
+                except Exception:
+                    pass
+                try:
+                    tmp_path.rename(pptx_path)
+                    self.log(f"    ✅ PPTX ZIP recréé — {total_removed} icône(s) VML supprimée(s)")
+                except Exception as _rn:
+                    import shutil as _sh
+                    _sh.move(str(tmp_path), str(pptx_path))
+                    self.log(f"    ✅ PPTX déplacé (shutil) — {total_removed} icône(s) VML supprimée(s)")
             else:
-                tmp_path.unlink(missing_ok=True)
-                self.log(f"    ℹ️ Aucune icône VML trouvée pour les spids: {vml_spids}")
+                try:
+                    tmp_path.unlink()
+                except Exception:
+                    pass
+                self.log(f"    ℹ️ Aucune icône VML supprimée")
 
         except Exception as _e:
             self.log(f"    ⚠️ Erreur nettoyage VML: {_e}")
+            import traceback as _tb
+            self.log(f"    📋 {_tb.format_exc()}")
             try:
-                tmp_path.unlink(missing_ok=True)
+                tmp_path.unlink()
             except Exception:
                 pass
 
