@@ -5944,14 +5944,14 @@ class EmbeddedFileExtractor:
 
                 with zipfile.ZipFile(tmp_path, 'w') as zout:
                     for item in zin.infolist():
-                        data = zin.read(item.name)
+                        data = zin.read(item.filename)
 
-                        if item.name.lower().endswith('.vml'):
+                        if item.filename.lower().endswith('.vml'):
                             try:
                                 text = data.decode('utf-8', errors='replace')
                                 # Log a preview so we can see the content
                                 preview = text.replace('\n', ' ').replace('\r', '')[:400]
-                                self.log(f"    📄 {item.name}: {preview}")
+                                self.log(f"    📄 {item.filename}: {preview}")
 
                                 orig_text = text
                                 for _spid in vml_spids:
@@ -5979,13 +5979,13 @@ class EmbeddedFileExtractor:
                                             total_removed += _n2
                                             self.log(f"    ✅ VML shape (self-closing) supprimé: {_spid}")
                                         else:
-                                            self.log(f"    ⚠️ Spid '{_spid}' non trouvé dans {item.name}")
+                                            self.log(f"    ⚠️ Spid '{_spid}' non trouvé dans {item.filename}")
 
                                 if text != orig_text:
                                     data = text.encode('utf-8')
 
                             except Exception as _ve:
-                                self.log(f"    ⚠️ Erreur traitement VML {item.name}: {_ve}")
+                                self.log(f"    ⚠️ Erreur traitement VML {item.filename}: {_ve}")
 
                         # Preserve original compression for each entry
                         info_out = zipfile.ZipInfo(item.filename)
