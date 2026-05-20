@@ -5630,8 +5630,8 @@ class EmbeddedFileExtractor:
                                     self.log(f"    ✅ Shape OLE supprimé")
 
                                 # ── Supprimer les images-icônes à la même position ──
-                                # Les icônes OLE sont parfois des <p:pic> séparés dans spTree.
-                                # On supprime tout <p:pic> dont le centre est dans la zone du OLE.
+                                # Les icônes OLE peuvent être <p:pic> OU <p:sp> avec blipFill.
+                                # On supprime tout élément IMAGE dont le centre est dans la zone du OLE.
                                 _margin_ico = int(914400 * 0.25)   # 0.25 inch
                                 _ole_r = left + max(width,  Inches(0.1))
                                 _ole_b = top  + max(height, Inches(0.1))
@@ -5644,14 +5644,25 @@ class EmbeddedFileExtractor:
                                             continue
                                         _cx = _ico_shape.left + _ico_shape.width  / 2
                                         _cy = _ico_shape.top  + _ico_shape.height / 2
-                                        if ((left - _margin_ico) <= _cx <= (_ole_r + _margin_ico) and
-                                            (top  - _margin_ico) <= _cy <= (_ole_b + _margin_ico)):
-                                            _tag = _ico_shape.element.tag
-                                            if _tag.endswith('}pic') or _tag == 'pic':
-                                                _ico_shape.element.getparent().remove(
-                                                    _ico_shape.element)
-                                                self.log(
-                                                    f"    ✅ Image-icône OLE supprimée: {_ico_name}")
+                                        if not ((left - _margin_ico) <= _cx <= (_ole_r + _margin_ico) and
+                                                (top  - _margin_ico) <= _cy <= (_ole_b + _margin_ico)):
+                                            continue
+                                        _tag = _ico_shape.element.tag
+                                        # Cas 1 : élément <p:pic> (image pure)
+                                        _is_pic = _tag.endswith('}pic') or _tag == 'pic'
+                                        # Cas 2 : élément <p:sp> avec blipFill (sp rempli par une image)
+                                        _is_sp_blip = False
+                                        if not _is_pic and (_tag.endswith('}sp') or _tag == 'sp'):
+                                            for _sub in _ico_shape.element.iter():
+                                                _st = _sub.tag
+                                                if _st.endswith('}blipFill') or _st == 'blipFill':
+                                                    _is_sp_blip = True
+                                                    break
+                                        if _is_pic or _is_sp_blip:
+                                            _ico_shape.element.getparent().remove(
+                                                _ico_shape.element)
+                                            self.log(
+                                                f"    ✅ Image-icône OLE supprimée: {_ico_name}")
                                     except Exception:
                                         pass
 
