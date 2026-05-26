@@ -1325,7 +1325,8 @@ class EmbeddedFileExtractor:
             if directory.exists():
                 for fp in directory.iterdir():
                     if fp.is_file():
-                        m = re.search(r'_FJ_(\d+)', fp.stem)
+                        # Reconnaît _FJ_N et _FJ_A_N (doublon lettre)
+                        m = re.search(r'_FJ(?:_[A-Za-z])?_(\d+)', fp.stem)
                         if m:
                             n = int(m.group(1))
                             self._used_fj_numbers.add(n)
@@ -6587,16 +6588,16 @@ class EmbeddedFileExtractor:
                 if pdf_path and Path(pdf_path).exists():
                     self.log(f"  ✓ PDF créé: {Path(pdf_path).name}")
                     self._processed_absolute_paths.add(str(Path(pdf_path).resolve()))
+                    # Supprimer le MSG uniquement si le PDF est bien créé
+                    msg_in_output = Path(output_dir) / Path(msg_path).name
+                    if msg_in_output.exists() and msg_in_output.resolve() != Path(msg_path).resolve():
+                        try:
+                            msg_in_output.unlink()
+                            self.log(f"  🗑️ MSG supprimé (PDF disponible): {msg_in_output.name}")
+                        except Exception as del_err:
+                            self.log(f"  ⚠️ Impossible de supprimer le MSG: {del_err}")
                 else:
-                    self.log(f"  ⚠ Conversion PDF échouée (Outlook requis)")
-                # Toujours supprimer le MSG du dossier de sortie (avec ou sans PDF)
-                msg_in_output = Path(output_dir) / Path(msg_path).name
-                if msg_in_output.exists() and msg_in_output.resolve() != Path(msg_path).resolve():
-                    try:
-                        msg_in_output.unlink()
-                        self.log(f"  🗑️ MSG supprimé du dossier de sortie: {msg_in_output.name}")
-                    except Exception as del_err:
-                        self.log(f"  ⚠️ Impossible de supprimer le MSG: {del_err}")
+                    self.log(f"  ⚠ Conversion PDF échouée — MSG conservé")
 
             except Exception as pdf_error:
                 self.log(f"  ⚠ Erreur conversion PDF: {pdf_error}")
