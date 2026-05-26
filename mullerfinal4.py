@@ -6538,6 +6538,16 @@ class EmbeddedFileExtractor:
                             shutil.copy2(tmp, str(output_path.absolute()))
                             os.remove(tmp)
 
+                            # MSG imbriqué : convertir aussi en PDF
+                            if att_ext == '.msg':
+                                try:
+                                    self.log(f"    🔄 MSG imbriqué → conversion PDF...")
+                                    _nested_pdf = self.convert_msg_to_pdf(output_path, output_dir, [])
+                                    if _nested_pdf:
+                                        self.log(f"    ✅ MSG imbriqué → PDF : {Path(_nested_pdf).name}")
+                                except Exception as _mp_err:
+                                    self.log(f"    ⚠️ Conversion PDF MSG imbriqué : {_mp_err}")
+
                             self.log(f"    ✅ PJ extraite : {output_name_clean}")
                             extracted_names.append(output_name_clean)
                             self.add_to_report('extracted', {
@@ -7841,7 +7851,29 @@ class SimpleFileExtractorGUI:
                                     file_dir = session_dir / f"{stem_safe}_{_dup_n}"
                             file_dir.mkdir(parents=True, exist_ok=True)
 
-                            extracted = extractor.process_file(file_path, file_dir)
+                            # Doublon (_A/_B…) : renommer le fichier source pour que les
+                            # fichiers extraits héritent du même suffixe alphabétique
+                            _eff_path = Path(file_path)
+                            _tmp_renamed_dir = None
+                            if file_dir.name != stem_safe:
+                                try:
+                                    import tempfile as _tmpmod
+                                    _tmp_renamed_dir = Path(_tmpmod.mkdtemp())
+                                    _eff_path = _tmp_renamed_dir / f"{file_dir.name}{Path(file_path).suffix}"
+                                    shutil.copy2(str(file_path), str(_eff_path))
+                                except Exception:
+                                    _eff_path = Path(file_path)
+                                    _tmp_renamed_dir = None
+
+                            extracted = extractor.process_file(_eff_path, file_dir)
+
+                            # Nettoyage copie temporaire renommée
+                            if _tmp_renamed_dir is not None:
+                                try:
+                                    _eff_path.unlink(missing_ok=True)
+                                    _tmp_renamed_dir.rmdir()
+                                except Exception:
+                                    pass
 
                             # Marquer le fichier source comme traité (évite retraitement en récursion)
                             try:
@@ -7859,7 +7891,7 @@ class SimpleFileExtractorGUI:
 
                             if count > 0:
                                 already_processed = set()
-                                output_copy = file_dir / Path(file_path).name
+                                output_copy = file_dir / _eff_path.name
                                 if output_copy.exists():
                                     try:
                                         stat = output_copy.stat()
