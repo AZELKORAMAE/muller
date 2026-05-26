@@ -6559,17 +6559,15 @@ class EmbeddedFileExtractor:
 
                     msg_com.Close(0)
 
-                    # Convertir les MSG imbriqués en PDF maintenant que le parent est fermé
+                    # Traitement complet des MSG imbriqués (comme les MSG désencapsulés) :
+                    # extraction de leurs PJ + conversion PDF — maintenant que le parent est fermé
                     for _nested_msg_path in _nested_msgs_to_pdf:
                         try:
-                            self.log(f"    🔄 Conversion MSG imbriqué → PDF : {Path(_nested_msg_path).name}")
-                            _nested_pdf = self.convert_msg_to_pdf(_nested_msg_path, output_dir, [])
-                            if _nested_pdf and Path(_nested_pdf).exists():
-                                self.log(f"    ✅ PDF créé : {Path(_nested_pdf).name}")
-                            else:
-                                self.log(f"    ⚠️ PDF non créé — MSG conservé")
+                            self.log(f"    🔄 Traitement complet MSG imbriqué : {Path(_nested_msg_path).name}")
+                            self.extract_from_msg_file(str(_nested_msg_path), output_dir)
+                            self.log(f"    ✅ MSG imbriqué traité (PJ extraites + PDF créé)")
                         except Exception as _mp_err:
-                            self.log(f"    ⚠️ Erreur conversion MSG→PDF : {_mp_err}")
+                            self.log(f"    ⚠️ Erreur traitement MSG imbriqué : {_mp_err}")
 
                 finally:
                     pythoncom.CoUninitialize()
