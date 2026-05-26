@@ -7827,7 +7827,18 @@ class SimpleFileExtractorGUI:
                             stem_safe = re.sub(r'[<>:"/\\|?*]', '_', Path(file_path).stem.strip())[:80]
                             file_dir = session_dir / stem_safe
                             if file_dir.exists():
-                                file_dir = session_dir / f"{stem_safe}_{i+1}"
+                                # Doublon : suffixe alphabétique _A, _B, _C …
+                                for _dup_letter in 'ABCDEFGHIJKLMNOPQRSTUVWXYZ':
+                                    _dup_candidate = session_dir / f"{stem_safe}_{_dup_letter}"
+                                    if not _dup_candidate.exists():
+                                        file_dir = _dup_candidate
+                                        break
+                                else:
+                                    # > 26 doublons : repli numérique
+                                    _dup_n = 1
+                                    while (session_dir / f"{stem_safe}_{_dup_n}").exists():
+                                        _dup_n += 1
+                                    file_dir = session_dir / f"{stem_safe}_{_dup_n}"
                             file_dir.mkdir(parents=True, exist_ok=True)
 
                             extracted = extractor.process_file(file_path, file_dir)
