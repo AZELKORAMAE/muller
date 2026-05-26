@@ -2321,7 +2321,8 @@ class EmbeddedFileExtractor:
         # ====================================================================
 
         # Vérifier si le nom se termine déjà par _FJ_X  (ex: DER-362949_2_FJ_4)
-        fj_pattern = r'^(.*_FJ)_(\d+)$'
+        # Gère aussi le suffixe lettre doublon : DER-xxx_FJ_A_4, DER-xxx_FJ_B_2, etc.
+        fj_pattern = r'^(.*_FJ(?:_[A-Za-z])?)_(\d+)$'
         match = re.match(fj_pattern, base_name)
 
         if match:
@@ -6481,6 +6482,7 @@ class EmbeddedFileExtractor:
                     attachments = msg_com.Attachments
                     nb_att = attachments.Count
                     self.log(f"  📎 {nb_att} pièce(s) jointe(s) détectée(s)")
+                    _nested_msgs_to_pdf = []  # MSG imbriqués à convertir après fermeture parent
 
                     for i in range(1, nb_att + 1):
                         attachment = attachments.Item(i)
@@ -6538,15 +6540,10 @@ class EmbeddedFileExtractor:
                             shutil.copy2(tmp, str(output_path.absolute()))
                             os.remove(tmp)
 
-                            # MSG imbriqué : convertir aussi en PDF
+                            # Collecter les MSG imbriqués pour conversion PDF
+                            # après fermeture du MSG parent (évite conflits COM/Outlook)
                             if att_ext == '.msg':
-                                try:
-                                    self.log(f"    🔄 MSG imbriqué → conversion PDF...")
-                                    _nested_pdf = self.convert_msg_to_pdf(output_path, output_dir, [])
-                                    if _nested_pdf:
-                                        self.log(f"    ✅ MSG imbriqué → PDF : {Path(_nested_pdf).name}")
-                                except Exception as _mp_err:
-                                    self.log(f"    ⚠️ Conversion PDF MSG imbriqué : {_mp_err}")
+                                _nested_msgs_to_pdf.append(output_path)
 
                             self.log(f"    ✅ PJ extraite : {output_name_clean}")
                             extracted_names.append(output_name_clean)
@@ -6561,6 +6558,18 @@ class EmbeddedFileExtractor:
                             self.log(f"    ❌ Erreur sauvegarde PJ : {save_err}")
 
                     msg_com.Close(0)
+
+                    # Convertir les MSG imbriqués en PDF maintenant que le parent est fermé
+                    for _nested_msg_path in _nested_msgs_to_pdf:
+                        try:
+                            self.log(f"    🔄 Conversion MSG imbriqué → PDF : {Path(_nested_msg_path).name}")
+                            _nested_pdf = self.convert_msg_to_pdf(_nested_msg_path, output_dir, [])
+                            if _nested_pdf and Path(_nested_pdf).exists():
+                                self.log(f"    ✅ PDF créé : {Path(_nested_pdf).name}")
+                            else:
+                                self.log(f"    ⚠️ PDF non créé — MSG conservé")
+                        except Exception as _mp_err:
+                            self.log(f"    ⚠️ Erreur conversion MSG→PDF : {_mp_err}")
 
                 finally:
                     pythoncom.CoUninitialize()
