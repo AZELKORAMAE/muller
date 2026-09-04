@@ -1,1 +1,7 @@
-PLACEHOLDER_WILL_REPLACE
+Le fichier binaire DOCUMENTATION_MULLER.docx (60 Ko) existe dans le commit local 7f016a0 sur cette branche et a été livré via le chat de la session Claude Code.
+
+Pour le pousser sur GitHub depuis votre machine :
+    git pull origin claude/fix-file-extraction-excel-wzJ8O
+    git push origin claude/fix-file-extraction-excel-wzJ8O
+
+Ce fichier remplace ce placeholder texte.
