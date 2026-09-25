@@ -3882,6 +3882,12 @@ class EmbeddedFileExtractor:
                         original_copy = Path(output_dir) / Path(docx_path).name
                         shutil.copy2(docx_path, original_copy)
                         self.log(f"  ✅ Copie créée: {original_copy.name}")
+                        self.add_to_report('processed', {
+                            'file_name': Path(docx_path).name,
+                            'file_type': 'DOCX',
+                            'files_found': 0,
+                            'status': 'Aucun fichier incorporé (embeddings non référencés dans le corps)'
+                        })
                         return []
                     
                     # ========================================
@@ -4358,6 +4364,12 @@ class EmbeddedFileExtractor:
                         self.log(f"    ⚠️ Aucun mapping trouvé")
                         original_copy = Path(output_dir) / Path(xlsx_path).name
                         shutil.copy2(xlsx_path, original_copy)
+                        self.add_to_report('processed', {
+                            'file_name': Path(xlsx_path).name,
+                            'file_type': 'XLSX',
+                            'files_found': 0,
+                            'status': 'Aucun fichier incorporé (embeddings non référencés dans les feuilles)'
+                        })
                         return []
                     
                     # ========================================
