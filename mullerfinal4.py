@@ -3880,7 +3880,7 @@ class EmbeddedFileExtractor:
                         self.log(f"    ⚠️ Aucun mapping trouvé")
                         # Copier l'original
                         original_copy = Path(output_dir) / Path(docx_path).name
-                        shutil.copy2(docx_path, original_copy)
+                        self._copy_original(docx_path, original_copy)
                         self.log(f"  ✅ Copie créée: {original_copy.name}")
                         self.add_to_report('processed', {
                             'file_name': Path(docx_path).name,
@@ -4154,13 +4154,13 @@ class EmbeddedFileExtractor:
                         else:
                             self.log(f"    ⚠️ Aucun fichier valide, copie de l'original")
                             original_copy = Path(output_dir) / Path(docx_path).name
-                            shutil.copy2(docx_path, original_copy)
+                            self._copy_original(docx_path, original_copy)
                             self.log(f"  ✅ Copie créée: {original_copy.name}")
                     else:
                         # Aucun fichier
                         self.log(f"\n  📄 Aucun fichier incorporé → Copie du fichier original")
                         original_copy = Path(output_dir) / Path(docx_path).name
-                        shutil.copy2(docx_path, original_copy)
+                        self._copy_original(docx_path, original_copy)
                         self.log(f"  ✅ Copie créée: {original_copy.name}")
                     
                     self.add_to_report('processed', {
@@ -4174,7 +4174,7 @@ class EmbeddedFileExtractor:
                     # Pas de dossier embeddings
                     self.log(f"\n  ℹ️ Aucun dossier embeddings/ → Aucun fichier incorporé")
                     original_copy = Path(output_dir) / Path(docx_path).name
-                    shutil.copy2(docx_path, original_copy)
+                    self._copy_original(docx_path, original_copy)
                     self.log(f"  ✅ Copie créée: {original_copy.name}")
                     
                     self.add_to_report('processed', {
@@ -4301,7 +4301,7 @@ class EmbeddedFileExtractor:
                 if ext not in ['.doc', '.xls', '.ppt']:
                     self.log(f"\n  📄 Aucun fichier incorporé → Copie du fichier original")
                     original_copy = Path(output_dir) / Path(file_path).name
-                    shutil.copy2(file_path, original_copy)
+                    self._copy_original(file_path, original_copy)
                     self.log(f"  ✅ Copie créée: {original_copy.name}")
                 else:
                     self.log(f"\n  📄 Aucun fichier incorporé — format legacy ignoré (utiliser la version convertie)")
@@ -4363,7 +4363,7 @@ class EmbeddedFileExtractor:
                     if not position_mapping:
                         self.log(f"    ⚠️ Aucun mapping trouvé")
                         original_copy = Path(output_dir) / Path(xlsx_path).name
-                        shutil.copy2(xlsx_path, original_copy)
+                        self._copy_original(xlsx_path, original_copy)
                         self.add_to_report('processed', {
                             'file_name': Path(xlsx_path).name,
                             'file_type': 'XLSX',
@@ -4584,7 +4584,7 @@ class EmbeddedFileExtractor:
                         )
                     else:
                         original_copy = Path(output_dir) / Path(xlsx_path).name
-                        shutil.copy2(xlsx_path, original_copy)
+                        self._copy_original(xlsx_path, original_copy)
                     
                     self.add_to_report('processed', {
                         'file_name': Path(xlsx_path).name,
@@ -4597,7 +4597,7 @@ class EmbeddedFileExtractor:
                     # Pas de dossier xl/embeddings/ → aucun fichier incorporé
                     self.log(f"\n  ℹ️ Aucun dossier embeddings/ → Aucun fichier incorporé")
                     original_copy = Path(output_dir) / Path(xlsx_path).name
-                    shutil.copy2(xlsx_path, original_copy)
+                    self._copy_original(xlsx_path, original_copy)
                     self.log(f"  ✅ Copie créée: {original_copy.name}")
                     self.add_to_report('processed', {
                         'file_name': Path(xlsx_path).name,
@@ -4614,7 +4614,7 @@ class EmbeddedFileExtractor:
             try:
                 original_copy = Path(output_dir) / Path(xlsx_path).name
                 if not original_copy.exists():
-                    shutil.copy2(xlsx_path, original_copy)
+                    self._copy_original(xlsx_path, original_copy)
                     self.log(f"  ⚠️ Erreur → copie de l'original créée: {original_copy.name}")
             except Exception:
                 pass
@@ -4829,7 +4829,7 @@ class EmbeddedFileExtractor:
 
                         original_copy = Path(output_dir) / pptx_path.name
                         if not original_copy.exists() or str(original_copy.resolve()) != str(pptx_path.resolve()):
-                            shutil.copy2(pptx_path, original_copy)
+                            self._copy_original(pptx_path, original_copy)
                         self.add_to_report('processed', {
                             'file_name': pptx_path.name, 'file_type': file_type_label,
                             'files_found': len(fallback_extracted),
@@ -5066,7 +5066,7 @@ class EmbeddedFileExtractor:
                     else:
                         self.log(f"\n  📄 Aucun fichier incorporé → Copie du fichier original")
                         original_copy = Path(output_dir) / pptx_path.name
-                        shutil.copy2(pptx_path, original_copy)
+                        self._copy_original(pptx_path, original_copy)
                         self.log(f"  ✅ Copie créée: {original_copy.name}")
 
                     self.add_to_report('processed', {
@@ -5079,7 +5079,7 @@ class EmbeddedFileExtractor:
                 else:
                     self.log(f"\n  ℹ️ Aucun dossier embeddings/ → Aucun fichier incorporé")
                     original_copy = Path(output_dir) / pptx_path.name
-                    shutil.copy2(pptx_path, original_copy)
+                    self._copy_original(pptx_path, original_copy)
                     self.log(f"  ✅ Copie créée: {original_copy.name}")
                     self.add_to_report('processed', {
                         'file_name': pptx_path.name,
@@ -5102,7 +5102,7 @@ class EmbeddedFileExtractor:
             try:
                 original_copy = Path(output_dir) / pptx_path.name
                 if not original_copy.exists():
-                    shutil.copy2(pptx_path, original_copy)
+                    self._copy_original(pptx_path, original_copy)
                     self.log(f"  ⚠️ Erreur → copie de l'original créée: {original_copy.name}")
             except Exception:
                 pass
@@ -6349,10 +6349,10 @@ class EmbeddedFileExtractor:
                 original_copy = Path(output_dir) / Path(pdf_path).name
                 if Path(pdf_path).resolve() != original_copy.resolve():
                     try:
-                        shutil.copy2(pdf_path, original_copy)
+                        self._copy_original(pdf_path, original_copy)
                     except PermissionError:
                         time.sleep(2)
-                        shutil.copy2(pdf_path, original_copy)
+                        self._copy_original(pdf_path, original_copy)
                 self.log(f"  ✅ Copie créée: {original_copy.name}")
             
             self.add_to_report('processed', {
@@ -6370,7 +6370,7 @@ class EmbeddedFileExtractor:
             try:
                 original_copy = Path(output_dir) / Path(pdf_path).name
                 if not original_copy.exists():
-                    shutil.copy2(pdf_path, original_copy)
+                    self._copy_original(pdf_path, original_copy)
                     self.log(f"  ⚠️ Erreur → copie de l'original créée: {original_copy.name}")
             except Exception:
                 pass
@@ -7428,6 +7428,7 @@ class EmbeddedFileExtractor:
                 except Exception:
                     pass
 
+                self._ensure_processed_entry(file_path)
                 return extracted_files
 
             except Exception as e:
@@ -7441,7 +7442,37 @@ class EmbeddedFileExtractor:
                         self.log(f"  📋 Erreur → copie de l'original : {file_path.name}")
                 except Exception:
                     pass
+                self._ensure_processed_entry(file_path, error=e)
                 return []
+
+    def _copy_original(self, src, dst):
+        """Copie src vers dst, sauf si c'est le même fichier (cas de la récursion)."""
+        src, dst = Path(src), Path(dst)
+        try:
+            if dst.exists() and src.resolve() == dst.resolve():
+                return
+        except OSError:
+            pass
+        self._safe_copy2(src, dst)
+
+    def _ensure_processed_entry(self, file_path, error=None):
+        """Garantit qu'un fichier passé par process_file figure dans les fichiers traités."""
+        name = Path(file_path).name
+        if any(e.get('file_name') == name for e in self.report_data['files_processed']):
+            return
+        if error is None:
+            for e in self.report_data['errors']:
+                if e.get('file_name') == name:
+                    error = e.get('error_message') or e.get('error') or 'inconnue'
+                    break
+        self.add_to_report('processed', {
+            'file_name': name,
+            'file_type': Path(file_path).suffix.lstrip('.').upper(),
+            'files_found': 0,
+            'status': f'Erreur : {str(error)[:80]}' if error else 'Aucun fichier incorporé',
+        })
+
+    @staticmethod
     def _safe_copy2(src, dst, retries=3, delay=2.0):
         import time as _t
         last_err = None
