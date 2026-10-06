@@ -7164,26 +7164,45 @@ class EmbeddedFileExtractor:
                 ws_sum['A2'].alignment = Alignment(horizontal='center')
 
                 # Bloc statistiques
-                ws_sum.merge_cells('A4:B4')
+                ws_sum.merge_cells('A4:C4')
                 header_cell(ws_sum['A4'], "STATISTIQUES GLOBALES", COLOR_HEADER_BLUE, font_size=13)
                 ws_sum.row_dimensions[4].height = 26
 
                 stats = [
-                    ("Volume du lot chargé :",          self.total_input_files, "8E44AD"),
-                    ("Fichiers sources traités :",      total_processed,       "27AE60"),
-                    ("Fichiers extraits avec succès :", total_extracted,       "2980B9"),
-                    ("Fichiers non archivables :",      total_non_archivable,  "E67E22"),
+                    ("Volume du lot chargé :",          self.total_input_files, "8E44AD",
+                     "Nombre de fichiers sélectionnés dans l'application au lancement du "
+                     "traitement, tous formats confondus (y compris ceux que l'outil "
+                     "n'analyse pas : JPG, TXT, PNG…)."),
+                    ("Fichiers sources traités :",      total_processed,       "27AE60",
+                     "Nombre total de documents analysés par l'outil : les fichiers du lot "
+                     "chargé + les fichiers « enfants » extraits puis analysés à leur tour "
+                     "(récursion, jusqu'à 3 niveaux), qu'ils contiennent ou non des objets "
+                     "insérés. Ce chiffre peut donc dépasser le volume du lot chargé."),
+                    ("Fichiers extraits avec succès :", total_extracted,       "2980B9",
+                     "Nombre d'objets insérés (fichiers encapsulés, pièces jointes de MSG) "
+                     "extraits des documents et enregistrés dans le dossier de sortie, "
+                     "à tous les niveaux de récursion."),
+                    ("Fichiers non archivables :",      total_non_archivable,  "E67E22",
+                     "Nombre d'objets insérés trouvés mais non extraits : format non pris "
+                     "en charge par l'archivage SharePoint, ou fichier vide (0 Ko). Ils "
+                     "sont conservés dans le document d'origine avec un message "
+                     "d'avertissement. Détail dans la feuille « Non Archivables »."),
                 ]
-                for i, (label, value, color) in enumerate(stats, start=6):
+                for i, (label, value, color, explanation) in enumerate(stats, start=6):
                     ws_sum[f'A{i}'] = label
                     ws_sum[f'A{i}'].font = Font(bold=True, size=11)
+                    ws_sum[f'A{i}'].alignment = Alignment(vertical='center')
                     ws_sum[f'B{i}'] = value
                     ws_sum[f'B{i}'].font      = Font(bold=True, size=12, color=color)
-                    ws_sum[f'B{i}'].alignment = Alignment(horizontal='center')
-                    ws_sum.row_dimensions[i].height = 20
+                    ws_sum[f'B{i}'].alignment = Alignment(horizontal='center', vertical='center')
+                    ws_sum[f'C{i}'] = explanation
+                    ws_sum[f'C{i}'].font      = Font(italic=True, size=10, color="595959")
+                    ws_sum[f'C{i}'].alignment = Alignment(wrap_text=True, vertical='center')
+                    ws_sum.row_dimensions[i].height = 48
 
                 ws_sum.column_dimensions['A'].width = 38
                 ws_sum.column_dimensions['B'].width = 22
+                ws_sum.column_dimensions['C'].width = 90
 
                 # ================================================================
                 # FEUILLE 2 : FICHIERS TRAITÉS
