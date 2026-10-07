@@ -2,78 +2,21 @@
 # -*- coding: utf-8 -*-
 
 """
-================================================================================
- OUTIL DE DÉSENCAPSULATION — EXTRACTEUR DE FICHIERS INCORPORÉS
- VERSION 10
-================================================================================
+Extracteur de Fichiers Incorporés - Version Finale CORRIGÉE
 
-OBJECTIF
-    Retrouver les fichiers insérés (« encapsulés ») dans des documents Office,
-    des PDF et des e-mails Outlook, les extraire comme fichiers autonomes pour
-    l'archivage SharePoint, et remplacer chacun d'eux dans le document d'origine
-    par le texte « Voir <nom du fichier> ».
+CORRECTIONS APPLIQUÉES :
+1. ✅ Activation Excel fonctionnelle (scripts VBS optimisés)
+2. ✅ Fichiers ZIP remplacés dans documents modifiés
+3. ✅ Nomenclature FJ corrigée (DER-348818_3_FJ_2 → FJ_3, FJ_4...)
 
-FORMATS ANALYSÉS EN ENTRÉE
-    .docx .doc .xlsx .xlsm .xls .pptx .pptm .ppt .pdf .msg
-    Tout autre format (.docm, .xlsb, .jpg, .png, .txt, .zip…) est compté dans le
-    lot chargé, listé comme « exclu » dans le rapport, et n'est pas analysé.
-
-DÉROULEMENT (interface SimpleFileExtractorGUI, méthode _run_extraction)
-    1. Sélection   : l'utilisateur choisit les fichiers (le « lot chargé ») et le
-                     dossier de sortie. Un dossier Extraction_<date>_<heure> est
-                     créé, avec un sous-dossier par fichier (suffixe _A, _B… si
-                     plusieurs fichiers ont le même nom).
-    2. Extraction  : EmbeddedFileExtractor.process_file() aiguille chaque fichier
-                     vers la fonction adaptée à son format :
-                       - extract_ole_from_docx      Word  (.doc converti en .docx)
-                       - extract_from_xlsx          Excel (.xls converti en .xlsx)
-                       - extract_from_pptx          PowerPoint (.ppt converti)
-                       - extract_from_pdf           PDF (pièces jointes du PDF)
-                       - extract_from_msg_file      e-mail MSG (PJ + conversion PDF)
-                     Les objets trouvés sont identifiés (OLE, package, fichier
-                     direct), extraits et nommés selon la nomenclature FJ
-                     (_generate_output_name). Le document est ensuite reconstruit
-                     (create_modified_*_exact_positions) avec « Voir <nom> » à la
-                     place de chaque objet extrait.
-    3. Récursion   : process_extracted_files_recursively() analyse à leur tour
-                     les fichiers extraits (jusqu'à 3 niveaux), car un fichier
-                     extrait peut lui-même contenir des objets.
-    4. Rapport     : generate_excel_report() produit le rapport Excel.
-
-RAPPORT EXCEL (onglets)
-    Résumé           Indicateurs : lot chargé (analysés / exclus, par extension),
-                     fichiers traités (sources / récursion / erreurs, par
-                     extension), objets extraits et non archivables, et
-                     rapprochement avec le contenu réel du dossier de sortie.
-    Fichiers Traités Tous les documents analysés, avec ou sans objet inséré,
-                     avec leur extension d'origine et leur origine (lot / récursion).
-    Fichiers Extraits Objets extraits avec succès.
-    Non Archivables  Objets conservés dans le document (type non pris en charge
-                     par SharePoint ou fichier vide).
-    Fichiers Exclus  Fichiers non analysés et motif.
-    Par extension    Tableau croisé lot / traités / exclus / extraits / sortie.
-    Guide            Définition des indicateurs, des formats et de chaque statut.
-
-NOUVEAUTÉS DE LA VERSION 10
-    - Tout fichier analysé est compté dans « Fichiers traités », y compris les
-      fichiers issus de la récursion, ceux sans objet inséré, ceux en erreur et
-      les e-mails MSG trouvés dans un document.
-    - Les fichiers au format non pris en charge sont listés (onglet « Fichiers
-      Exclus ») et décomptés par extension.
-    - Distinction fichiers sources d'origine / fichiers générés par la récursion.
-    - Nombre total de fichiers présents dans le dossier de sortie, et
-      rapprochement avec les indicateurs.
-    - Nouveaux onglets « Par extension » et « Guide ».
-    - Correction : copie d'un fichier sur lui-même en récursion (WinError 32).
-    - Correction : installation automatique de lxml au démarrage.
-
-BIBLIOTHÈQUES
-    python-docx (Word), openpyxl (Excel et rapport), python-pptx (PowerPoint),
-    PyMuPDF/fitz (PDF), olefile (objets OLE), lxml (XML Office),
-    pywin32 (Word/Excel/Outlook via COM : conversions et e-mails), tkinter (IHM).
+Fonctionnalités:
+- Détection et activation UNIQUEMENT des objets Excel embarqués
+- Extraction avec ordre réel correct (PPTX, DOCX, XLSX)
+- Remplacement direct (même nom que l'original)
+- Indexation personnalisée via fichier de référence
+- Rapport Excel détaillé
+- Support: DOCX, DOC, XLSX, XLSM, XLS, PPTX, PPT, PDF, MSG
 """
-TOOL_VERSION = "10"
-
 import threading
 import os
 import sys
@@ -90,6 +33,11 @@ import re
 import struct
 import traceback
 import time
+try:
+    from lxml import etree
+except ImportError:
+    install_package_safran("lxml")
+    from lxml import etree
 # Configuration repository Safran
 SAFRAN_REPO = "--index-url https://artifacts.cloud.safran/repository/pypi-group/simple --trusted-host artifacts.cloud.safran"
 
@@ -101,12 +49,6 @@ def install_package_safran(package_name):
     return result.returncode == 0
 
 # Import des bibliothèques
-try:
-    from lxml import etree
-except ImportError:
-    install_package_safran("lxml")
-    from lxml import etree
-
 try:
     from docx import Document
     from docx.shared import RGBColor, Pt
@@ -812,15 +754,11 @@ class EmbeddedFileExtractor:
         self.report_data = {
             'files_processed': [],
             'files_extracted': [],
-            'errors': [],
-            'excluded': [],     # fichiers non analysés (format non pris en charge)
+            'errors': []
         }
         self.current_source_file = None
         self.recursion_depth = 0  # ← AJOUTER CETTE LIGNE
         self.total_input_files = 0
-        self.input_files = []           # chemins du lot chargé (pour le décompte par extension)
-        self._current_origin = 'Source'  # 'Source' (lot chargé) ou 'Récursion'
-        self._converted_from = {}        # nom converti (.docx) → extension d'origine (.doc)
         self.manual_start_index = None
                 # ── AJOUTER CES DEUX LIGNES ICI ──────────────────────────────
         self._msg_already_processed = set()
@@ -1329,9 +1267,6 @@ class EmbeddedFileExtractor:
     def add_to_report(self, report_type, data):
         """Ajoute une entrée au rapport (sans doublons)"""
         if report_type == 'processed':
-            # Origine (lot chargé ou récursion) et extension, pour les indicateurs
-            data.setdefault('origine', self._current_origin)
-            data.setdefault('extension', Path(data.get('file_name', '')).suffix.lower())
             # Éviter les doublons pour les fichiers traités aussi
             file_name = data.get('file_name', '')
             is_duplicate = any(
@@ -3197,7 +3132,6 @@ class EmbeddedFileExtractor:
                     # ── Extraire les PJ du MSG AVANT la conversion PDF ──────────
                     self.log(f"  🔄 Extraction des pièces jointes du MSG encapsulé...")
                     msg_attachments = self._extract_msg_attachments_only(output_path, output_dir)
-                    self._report_embedded_msg(output_path, msg_attachments)
                     # ── Marquer ce MSG comme déjà traité (skip récursion) ──
                     self._msg_already_processed.add(str(output_path.resolve()))
                     if msg_attachments:
@@ -3462,7 +3396,6 @@ class EmbeddedFileExtractor:
                                 # ── Extraire les PJ du MSG AVANT la conversion PDF ──────────
                                 self.log(f"  🔄 Extraction des pièces jointes du MSG encapsulé...")
                                 msg_attachments = self._extract_msg_attachments_only(output_path, output_dir)
-                                self._report_embedded_msg(output_path, msg_attachments)
                                 if msg_attachments:
                                     self.log(f"  ✅ {len(msg_attachments)} PJ extraite(s) : {msg_attachments}")
                                 else:
@@ -6642,16 +6575,12 @@ class EmbeddedFileExtractor:
                     # Traitement complet des MSG imbriqués (comme les MSG désencapsulés) :
                     # extraction de leurs PJ + conversion PDF — maintenant que le parent est fermé
                     for _nested_msg_path in _nested_msgs_to_pdf:
-                        _prev_origin = self._current_origin
-                        self._current_origin = 'Récursion'
                         try:
                             self.log(f"    🔄 Traitement complet MSG imbriqué : {Path(_nested_msg_path).name}")
                             self.extract_from_msg_file(str(_nested_msg_path), output_dir)
                             self.log(f"    ✅ MSG imbriqué traité (PJ extraites + PDF créé)")
                         except Exception as _mp_err:
                             self.log(f"    ⚠️ Erreur traitement MSG imbriqué : {_mp_err}")
-                        finally:
-                            self._current_origin = _prev_origin
 
                 finally:
                     pythoncom.CoUninitialize()
@@ -7214,75 +7143,9 @@ class EmbeddedFileExtractor:
                     else:
                         files_ok.append(entry)
 
-                processed = self.report_data['files_processed']
-                excluded  = self.report_data.get('excluded', [])
-
-                def _ext_of(name):
-                    return Path(str(name)).suffix.lower() or '(sans extension)'
-
-                def _orig_ext(d):
-                    name = d.get('file_name', '')
-                    return self._converted_from.get(name) or d.get('extension') or _ext_of(name)
-
-                def _is_recursion(d):
-                    return d.get('origine') == 'Récursion'
-
-                total_processed      = len(processed)
-                total_extracted      = len(files_ok)
-                total_non_archivable = len(files_non_archivable)
-                proc_source = [d for d in processed if not _is_recursion(d)]
-                proc_recur  = [d for d in processed if _is_recursion(d)]
-                proc_errors = [d for d in processed if str(d.get('status', '')).startswith('Erreur')]
-                excl_source = [d for d in excluded if not _is_recursion(d)]
-                excl_recur  = [d for d in excluded if _is_recursion(d)]
-                total_input = self.total_input_files or len(self.input_files)
-                ecart_lot   = total_input - len(proc_source) - len(excl_source)
-
-                # ── Inventaire du dossier de sortie (pour le rapprochement) ──────
-                session_dir = Path(output_path).parent
-                report_name = Path(output_path).name
-                out_files = [p for p in session_dir.rglob('*')
-                             if p.is_file() and p.name != report_name and not p.name.startswith('~$')]
-                out_dirs = [p for p in session_dir.iterdir() if p.is_dir()]
-
-                ok_names     = {d.get('extracted_file', '') for d in files_ok}
-                source_names = {d.get('file_name', '') for d in proc_source}
-                all_names    = ok_names | {d.get('file_name', '') for d in processed}
-                msg_stems    = {Path(n).stem for n in all_names if n.lower().endswith('.msg')}
-                LEGACY_TO_MODERN = {'.doc': '.docx', '.xls': '.xlsx', '.ppt': '.pptx'}
-                converted_names = {Path(n).stem + LEGACY_TO_MODERN[_ext_of(n)]
-                                   for n in ok_names if _ext_of(n) in LEGACY_TO_MODERN}
-
-                out_cat = {'source': 0, 'extrait': 0, 'msg_pdf': 0, 'converti': 0, 'autre': 0}
-                out_by_ext = {}
-                for p in out_files:
-                    ext = _ext_of(p.name)
-                    out_by_ext[ext] = out_by_ext.get(ext, 0) + 1
-                    if ext == '.pdf' and p.stem in msg_stems:
-                        out_cat['msg_pdf'] += 1
-                    elif p.name in source_names:
-                        out_cat['source'] += 1
-                    elif p.name in ok_names:
-                        out_cat['extrait'] += 1
-                    elif p.name in converted_names:
-                        out_cat['converti'] += 1
-                    else:
-                        out_cat['autre'] += 1
-
-                extr_msg_replaced = sum(1 for n in ok_names if n.lower().endswith('.msg'))
-                extr_not_found = max(0, total_extracted - out_cat['extrait']
-                                     - extr_msg_replaced - out_cat['converti'])
-
-                def _count_by(items, key):
-                    counts = {}
-                    for it in items:
-                        k = key(it)
-                        counts[k] = counts.get(k, 0) + 1
-                    return dict(sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])))
-
-                input_by_ext = _count_by(self.input_files, lambda p: _ext_of(p))
-                excl_src_by_ext = _count_by(excl_source, lambda d: d.get('extension', ''))
-                proc_by_ext = _count_by(processed, _orig_ext)
+                total_processed       = len(self.report_data['files_processed'])
+                total_extracted       = len(files_ok)
+                total_non_archivable  = len(files_non_archivable)
 
                 # ================================================================
                 # FEUILLE 1 : RÉSUMÉ
@@ -7290,189 +7153,89 @@ class EmbeddedFileExtractor:
                 ws_sum = wb.active
                 ws_sum.title = "Résumé"
 
-                ws_sum.merge_cells('A1:C1')
+                ws_sum.merge_cells('A1:D1')
                 header_cell(ws_sum['A1'], "RAPPORT D'EXTRACTION DE FICHIERS INCORPORÉS",
                             COLOR_HEADER_DARK, font_size=15)
                 ws_sum.row_dimensions[1].height = 32
 
-                ws_sum.merge_cells('A2:C2')
-                ws_sum['A2'] = (f"Généré le : {datetime.now().strftime('%d/%m/%Y à %H:%M:%S')}"
-                                f"   —   Outil de désencapsulation version {TOOL_VERSION}")
+                ws_sum.merge_cells('A2:D2')
+                ws_sum['A2'] = f"Généré le : {datetime.now().strftime('%d/%m/%Y à %H:%M:%S')}"
                 ws_sum['A2'].font      = Font(italic=True, size=10)
                 ws_sum['A2'].alignment = Alignment(horizontal='center')
 
-                ws_sum.merge_cells('A3:C3')
-                ws_sum['A3'] = ("ℹ️ La définition de chaque indicateur et de chaque statut est "
-                                "détaillée dans l'onglet « Guide ».")
-                ws_sum['A3'].font      = Font(italic=True, size=10, color="2980B9")
-                ws_sum['A3'].alignment = Alignment(horizontal='center')
+                # Bloc statistiques
+                ws_sum.merge_cells('A4:C4')
+                header_cell(ws_sum['A4'], "STATISTIQUES GLOBALES", COLOR_HEADER_BLUE, font_size=13)
+                ws_sum.row_dimensions[4].height = 26
 
-                cur = [4]
-
-                def section(title):
-                    r = cur[0] + 1
-                    ws_sum.merge_cells(start_row=r, start_column=1, end_row=r, end_column=3)
-                    header_cell(ws_sum.cell(r, 1), title, COLOR_HEADER_BLUE, font_size=12)
-                    ws_sum.row_dimensions[r].height = 24
-                    cur[0] = r + 1
-
-                def stat(label, value, expl='', level=0, color="2C3E50"):
-                    r = cur[0]
-                    a = ws_sum.cell(r, 1, label)
-                    a.font = Font(bold=(level == 0), size=11 if level == 0 else 10)
-                    a.alignment = Alignment(vertical='center', indent=level * 2, wrap_text=True)
-                    b = ws_sum.cell(r, 2, value)
-                    b.font = Font(bold=True, size=12 if level == 0 else 10, color=color)
-                    b.alignment = Alignment(horizontal='center', vertical='center')
-                    c = ws_sum.cell(r, 3, expl)
-                    c.font = Font(italic=True, size=10, color="595959")
-                    c.alignment = Alignment(wrap_text=True, vertical='center')
-                    lines = max(1, -(-len(expl) // 105))
-                    ws_sum.row_dimensions[r].height = max(18, 14 * lines + 4)
-                    cur[0] = r + 1
-
-                SUPPORTED_INPUT_TXT = ".docx, .doc, .xlsx, .xlsm, .xls, .pptx, .pptm, .ppt, .pdf, .msg"
-
-                # ── 1. Lot chargé ────────────────────────────────────────────────
-                section("1. LOT CHARGÉ (fichiers sélectionnés dans l'application)")
-                stat("Volume du lot chargé :", total_input,
+                stats = [
+                    ("Volume du lot chargé :",          self.total_input_files, "8E44AD",
                      "Nombre de fichiers sélectionnés dans l'application au lancement du "
-                     "traitement, tous formats confondus.", color="8E44AD")
-                stat("dont fichiers analysés par l'outil", len(proc_source),
-                     f"Fichiers du lot dont le format est pris en charge ({SUPPORTED_INPUT_TXT}) "
-                     "et qui ont été analysés.", level=1, color="27AE60")
-                stat("dont fichiers exclus de l'analyse", len(excl_source),
-                     "Fichiers du lot dont le format n'est pas pris en charge par l'outil "
-                     "(ex. .jpg, .png, .txt, .docm, .xlsb). Un dossier vide est créé à leur nom ; "
-                     "ils ne sont ni analysés ni recopiés. Liste dans l'onglet « Fichiers Exclus ».",
-                     level=1, color="C0392B")
-                for ext, n in excl_src_by_ext.items():
-                    stat(f"{ext}", n, "", level=2, color="C0392B")
-                if ecart_lot:
-                    stat("dont fichiers non comptabilisés", ecart_lot,
-                         "Fichiers du lot qui n'apparaissent ni comme analysés ni comme exclus "
-                         "(erreur survenue avant l'analyse, voir le journal d'exécution).",
-                         level=1, color="E67E22")
-                stat("Répartition du lot chargé par extension :", "", "", level=0)
-                for ext, n in input_by_ext.items():
-                    stat(f"{ext}", n, "", level=2)
+                     "traitement, tous formats confondus (y compris ceux que l'outil "
+                     "n'analyse pas : JPG, TXT, PNG…)."),
+                    ("Fichiers sources traités :",      total_processed,       "27AE60",
+                     "Nombre total de documents analysés par l'outil : les fichiers du lot "
+                     "chargé + les fichiers « enfants » extraits puis analysés à leur tour "
+                     "(récursion, jusqu'à 3 niveaux), qu'ils contiennent ou non des objets "
+                     "insérés. Ce chiffre peut donc dépasser le volume du lot chargé."),
+                    ("Fichiers extraits avec succès :", total_extracted,       "2980B9",
+                     "Nombre d'objets insérés (fichiers encapsulés, pièces jointes de MSG) "
+                     "extraits des documents et enregistrés dans le dossier de sortie, "
+                     "à tous les niveaux de récursion."),
+                    ("Fichiers non archivables :",      total_non_archivable,  "E67E22",
+                     "Nombre d'objets insérés trouvés mais non extraits : format non pris "
+                     "en charge par l'archivage SharePoint, ou fichier vide (0 Ko). Ils "
+                     "sont conservés dans le document d'origine avec un message "
+                     "d'avertissement. Détail dans la feuille « Non Archivables »."),
+                ]
+                for i, (label, value, color, explanation) in enumerate(stats, start=6):
+                    ws_sum[f'A{i}'] = label
+                    ws_sum[f'A{i}'].font = Font(bold=True, size=11)
+                    ws_sum[f'A{i}'].alignment = Alignment(vertical='center')
+                    ws_sum[f'B{i}'] = value
+                    ws_sum[f'B{i}'].font      = Font(bold=True, size=12, color=color)
+                    ws_sum[f'B{i}'].alignment = Alignment(horizontal='center', vertical='center')
+                    ws_sum[f'C{i}'] = explanation
+                    ws_sum[f'C{i}'].font      = Font(italic=True, size=10, color="595959")
+                    ws_sum[f'C{i}'].alignment = Alignment(wrap_text=True, vertical='center')
+                    ws_sum.row_dimensions[i].height = 48
 
-                # ── 2. Fichiers traités ─────────────────────────────────────────
-                section("2. FICHIERS TRAITÉS (documents analysés par l'outil)")
-                stat("Fichiers traités (sources + récursion) :", total_processed,
-                     "Nombre total de documents analysés par l'outil, qu'ils contiennent ou non "
-                     "des objets insérés. Peut dépasser le volume du lot chargé, car les fichiers "
-                     "extraits sont eux-mêmes analysés (récursion).", color="27AE60")
-                stat("dont fichiers sources d'origine", len(proc_source),
-                     "Fichiers du lot chargé analysés par l'outil.", level=1, color="27AE60")
-                stat("dont fichiers générés par la récursion", len(proc_recur),
-                     "Fichiers « enfants » : documents extraits d'un autre fichier puis analysés "
-                     "à leur tour (jusqu'à 3 niveaux), y compris les e-mails MSG trouvés dans un "
-                     "document ou dans un autre e-mail.", level=1, color="27AE60")
-                stat("dont fichiers en erreur", len(proc_errors),
-                     "Fichiers qui n'ont pas pu être analysés (statut « Erreur : … », par exemple "
-                     "fichier endommagé). Ils restent dans le dossier de sortie sans modification.",
-                     level=1, color="C0392B")
-                stat("Répartition des fichiers traités par extension :", "",
-                     "Extension d'origine (un .doc converti en .docx est compté en .doc).", level=0)
-                for ext, n in proc_by_ext.items():
-                    stat(f"{ext}", n, "", level=2)
-
-                # ── 3. Extraction ───────────────────────────────────────────────
-                section("3. OBJETS INSÉRÉS TROUVÉS DANS LES DOCUMENTS")
-                stat("Fichiers extraits avec succès :", total_extracted,
-                     "Objets insérés (fichiers encapsulés, pièces jointes d'e-mails) extraits "
-                     "et enregistrés dans le dossier de sortie, à tous les niveaux de récursion.",
-                     color="2980B9")
-                stat("Fichiers non archivables :", total_non_archivable,
-                     "Objets insérés trouvés mais non extraits : format non pris en charge par "
-                     "l'archivage SharePoint, ou fichier vide (0 Ko). Ils restent dans le document "
-                     "d'origine avec un message d'avertissement. Détail dans l'onglet « Non Archivables ».",
-                     color="E67E22")
-                if excl_recur:
-                    stat("Fichiers extraits non analysés (ZIP, HTML…) :", len(excl_recur),
-                         "Fichiers extraits dont le contenu n'est pas analysé par l'outil "
-                         "(archives, pages web). Ils sont signalés « Succès + Retraitement » et "
-                         "doivent être vérifiés manuellement.", color="E67E22")
-
-                # ── 4. Dossier de sortie ────────────────────────────────────────
-                section("4. DOSSIER DE SORTIE — RAPPROCHEMENT")
-                stat("Nombre de dossiers créés :", len(out_dirs),
-                     "Un dossier par fichier du lot chargé (y compris les fichiers exclus).",
-                     color="8E44AD")
-                stat("Total des fichiers présents dans le dossier de sortie :", len(out_files),
-                     "Nombre de fichiers réellement présents dans les dossiers de sortie (hors ce "
-                     "rapport). C'est le volume à réintégrer.", color="2C3E50")
-                stat("dont documents sources (copie ou version modifiée)", out_cat['source'],
-                     "Un exemplaire de chaque fichier du lot analysé : version modifiée (objets "
-                     "remplacés par « Voir <nom> ») ou copie à l'identique s'il ne contenait rien.",
-                     level=1)
-                stat("dont fichiers extraits", out_cat['extrait'],
-                     "Objets insérés et pièces jointes extraits, présents sous leur nom FJ.", level=1)
-                stat("dont PDF issus d'e-mails MSG", out_cat['msg_pdf'],
-                     "Chaque e-mail MSG (chargé ou extrait) est converti en PDF ; le fichier .msg "
-                     "est ensuite supprimé du dossier de sortie.", level=1)
-                stat("dont fichiers extraits convertis au format moderne", out_cat['converti'],
-                     "Fichiers .doc/.xls/.ppt extraits puis convertis en .docx/.xlsx/.pptx pour "
-                     "être analysés ; seule la version convertie est conservée.", level=1)
-                stat("dont autres fichiers", out_cat['autre'],
-                     "Fichiers présents qui ne correspondent à aucune catégorie ci-dessus.", level=1)
-                stat("Rapprochement des fichiers extraits :", total_extracted,
-                     "Les fichiers extraits avec succès se retrouvent dans le dossier de sortie "
-                     "sous l'une des formes suivantes :", color="2980B9")
-                stat("présents tels quels", out_cat['extrait'], "", level=1)
-                stat("e-mails MSG remplacés par leur PDF", extr_msg_replaced, "", level=1)
-                stat("anciens formats remplacés par leur version convertie", out_cat['converti'], "",
-                     level=1)
-                stat("non retrouvés dans le dossier de sortie", extr_not_found,
-                     "Par exemple fichier renommé, déplacé ou supprimé après l'extraction.", level=1)
-                stat("Répartition des fichiers de sortie par extension :", "", "", level=0)
-                for ext, n in sorted(out_by_ext.items(), key=lambda kv: (-kv[1], kv[0])):
-                    stat(f"{ext}", n, "", level=2)
-
-                ws_sum.column_dimensions['A'].width = 52
-                ws_sum.column_dimensions['B'].width = 14
-                ws_sum.column_dimensions['C'].width = 95
+                ws_sum.column_dimensions['A'].width = 38
+                ws_sum.column_dimensions['B'].width = 22
+                ws_sum.column_dimensions['C'].width = 90
 
                 # ================================================================
                 # FEUILLE 2 : FICHIERS TRAITÉS
                 # ================================================================
                 ws_proc = wb.create_sheet("Fichiers Traités")
-                headers = ['N°', 'Nom du fichier', "Extension d'origine", 'Origine', 'Type',
-                           'Fichiers trouvés', 'Statut']
+                headers = ['N°', 'Nom du fichier', 'Type', 'Fichiers trouvés', 'Statut']
                 for col, h in enumerate(headers, 1):
                     header_cell(ws_proc.cell(1, col), h, COLOR_HEADER_DARK)
                 ws_proc.row_dimensions[1].height = 24
 
-                for idx, d in enumerate(processed, 1):
+                for idx, d in enumerate(self.report_data['files_processed'], 1):
                     row = idx + 1
                     ws_proc.cell(row, 1, idx)
                     ws_proc.cell(row, 2, d.get('file_name', ''))
-                    ws_proc.cell(row, 3, _orig_ext(d))
-                    ws_proc.cell(row, 4, 'Récursion (fichier enfant)' if _is_recursion(d)
-                                 else 'Fichier source (lot chargé)')
-                    ws_proc.cell(row, 5, d.get('file_type', ''))
-                    ws_proc.cell(row, 6, d.get('files_found', 0))
-                    ws_proc.cell(row, 7, d.get('status', ''))
+                    ws_proc.cell(row, 3, d.get('file_type', ''))
+                    ws_proc.cell(row, 4, d.get('files_found', 0))
+                    ws_proc.cell(row, 5, d.get('status', ''))
 
-                    for col in (1, 3, 5, 6):
-                        ws_proc.cell(row, col).alignment = Alignment(horizontal='center')
+                    ws_proc.cell(row, 1).alignment = Alignment(horizontal='center')
+                    ws_proc.cell(row, 3).alignment = Alignment(horizontal='center')
+                    ws_proc.cell(row, 4).alignment = Alignment(horizontal='center')
 
                     status = d.get('status', '')
                     if 'Erreur' in status:
-                        color_row(ws_proc, row, 7, COLOR_ROW_RED)
+                        color_row(ws_proc, row, 5, COLOR_ROW_RED)
                     elif 'extrait' in status or 'succès' in status.lower():
-                        color_row(ws_proc, row, 7, COLOR_ROW_GREEN)
+                        color_row(ws_proc, row, 5, COLOR_ROW_GREEN)
 
-                ws_proc.auto_filter.ref = f"A1:G{max(1, len(processed) + 1)}"
-                ws_proc.freeze_panes = 'A2'
                 ws_proc.column_dimensions['A'].width = 6
                 ws_proc.column_dimensions['B'].width = 42
-                ws_proc.column_dimensions['C'].width = 18
-                ws_proc.column_dimensions['D'].width = 28
-                ws_proc.column_dimensions['E'].width = 10
-                ws_proc.column_dimensions['F'].width = 16
-                ws_proc.column_dimensions['G'].width = 62
+                ws_proc.column_dimensions['C'].width = 12
+                ws_proc.column_dimensions['D'].width = 18
+                ws_proc.column_dimensions['E'].width = 40
 
                 # ================================================================
                 # FEUILLE 3 : FICHIERS EXTRAITS (succès uniquement)
@@ -7603,74 +7366,6 @@ class EmbeddedFileExtractor:
                 ws_na.column_dimensions['F'].width = 50
 
                 # ================================================================
-                # FEUILLE 5 : FICHIERS EXCLUS DE L'ANALYSE
-                # ================================================================
-                ws_ex = wb.create_sheet("Fichiers Exclus")
-                headers_ex = ['N°', 'Nom du fichier', 'Extension', 'Origine', 'Motif']
-                for col, h in enumerate(headers_ex, 1):
-                    header_cell(ws_ex.cell(1, col), h, COLOR_HEADER_RED)
-                ws_ex.row_dimensions[1].height = 24
-                if excluded:
-                    for idx, d in enumerate(excluded, 1):
-                        row = idx + 1
-                        recur = _is_recursion(d)
-                        ws_ex.cell(row, 1, idx).alignment = Alignment(horizontal='center')
-                        ws_ex.cell(row, 2, d.get('file_name', ''))
-                        ws_ex.cell(row, 3, d.get('extension', '')).alignment = Alignment(horizontal='center')
-                        ws_ex.cell(row, 4, 'Récursion (fichier extrait)' if recur
-                                   else 'Fichier source (lot chargé)')
-                        ws_ex.cell(row, 5, "Fichier extrait dont le contenu n'est pas analysé "
-                                           "(archive / page web) — retraitement manuel" if recur
-                                   else "Format non pris en charge par l'outil — non analysé, "
-                                        "non recopié (dossier vide)")
-                        color_row(ws_ex, row, 5, COLOR_ROW_RED)
-                    ws_ex.auto_filter.ref = f"A1:E{len(excluded) + 1}"
-                else:
-                    ws_ex.merge_cells('A2:E2')
-                    ws_ex['A2'] = "✅ Aucun fichier exclu de l'analyse"
-                    ws_ex['A2'].font      = Font(bold=True, color="27AE60", size=12)
-                    ws_ex['A2'].alignment = Alignment(horizontal='center')
-                ws_ex.freeze_panes = 'A2'
-                for col, w in zip('ABCDE', (6, 48, 14, 28, 80)):
-                    ws_ex.column_dimensions[col].width = w
-
-                # ================================================================
-                # FEUILLE 6 : RÉPARTITION PAR EXTENSION
-                # ================================================================
-                ws_pe = wb.create_sheet("Par extension")
-                headers_pe = ['Extension', 'Lot chargé', 'Traités — sources', 'Traités — récursion',
-                              "Exclus de l'analyse", 'Extraits avec succès', 'Présents en sortie']
-                for col, h in enumerate(headers_pe, 1):
-                    header_cell(ws_pe.cell(1, col), h, COLOR_HEADER_DARK)
-                ws_pe.row_dimensions[1].height = 30
-                ok_by_ext = _count_by(files_ok, lambda d: _ext_of(d.get('extracted_file', '')))
-                src_by_ext = _count_by(proc_source, _orig_ext)
-                rec_by_ext = _count_by(proc_recur, _orig_ext)
-                exc_by_ext = _count_by(excluded, lambda d: d.get('extension', ''))
-                columns = [input_by_ext, src_by_ext, rec_by_ext, exc_by_ext, ok_by_ext, out_by_ext]
-                all_exts = sorted(set().union(*[c.keys() for c in columns]))
-                for r, ext in enumerate(all_exts, 2):
-                    ws_pe.cell(r, 1, ext).font = Font(bold=True)
-                    for c, counts in enumerate(columns, 2):
-                        ws_pe.cell(r, c, counts.get(ext, 0)).alignment = Alignment(horizontal='center')
-                total_row = len(all_exts) + 2
-                ws_pe.cell(total_row, 1, 'TOTAL').font = Font(bold=True)
-                for c, counts in enumerate(columns, 2):
-                    cell = ws_pe.cell(total_row, c, sum(counts.values()))
-                    cell.font = Font(bold=True)
-                    cell.alignment = Alignment(horizontal='center')
-                color_row(ws_pe, total_row, 7, COLOR_ROW_GRAY)
-                ws_pe.freeze_panes = 'B2'
-                ws_pe.column_dimensions['A'].width = 18
-                for col in 'BCDEFG':
-                    ws_pe.column_dimensions[col].width = 20
-
-                # ================================================================
-                # FEUILLE 7 : GUIDE DE LECTURE
-                # ================================================================
-                self._write_guide_sheet(wb.create_sheet("Guide"), header_cell, COLOR_HEADER_BLUE)
-
-                # ================================================================
                 # Sauvegarder
                 # ================================================================
                 wb.save(output_path)
@@ -7680,191 +7375,6 @@ class EmbeddedFileExtractor:
                 print(f"Erreur génération rapport Excel: {e}")
                 traceback.print_exc()
                 return False
-    GUIDE_SECTIONS = [
-        ("PRINCIPE DE FONCTIONNEMENT DE L'OUTIL", [
-            ("Étape 1 — Sélection",
-             "L'utilisateur sélectionne les fichiers à traiter (le « lot chargé ») et un dossier de "
-             "sortie. L'outil crée un dossier « Extraction_<date>_<heure> » contenant un sous-dossier "
-             "par fichier chargé. Si deux fichiers portent le même nom, le second reçoit le suffixe "
-             "_A, le troisième _B, etc."),
-            ("Étape 2 — Extraction initiale",
-             "Chaque fichier du lot est analysé. Les .doc/.xls/.ppt sont d'abord convertis au format "
-             "moderne (.docx/.xlsx/.pptx). Les objets insérés trouvés sont extraits dans le "
-             "sous-dossier et nommés selon la nomenclature FJ. Le document est recopié dans son "
-             "sous-dossier : en version modifiée (chaque objet extrait est remplacé par le texte "
-             "« Voir <nom du fichier> ») ou à l'identique s'il ne contient aucun objet. Les e-mails "
-             "MSG sont convertis en PDF et leurs pièces jointes extraites."),
-            ("Étape 3 — Récursion",
-             "Un fichier extrait peut lui-même contenir des objets insérés (ex. un Word dans un Word). "
-             "L'outil analyse donc à leur tour les fichiers extraits, jusqu'à 3 niveaux de profondeur."),
-            ("Étape 4 — Rapport",
-             "Génération de ce fichier Excel, même si le traitement a été interrompu."),
-        ]),
-        ("DÉFINITION DES INDICATEURS (onglet Résumé)", [
-            ("Volume du lot chargé",
-             "Nombre de fichiers sélectionnés dans l'application. Il se décompose en fichiers "
-             "analysés + fichiers exclus de l'analyse (format non pris en charge)."),
-            ("Fichiers traités (sources + récursion)",
-             "Nombre de documents analysés par l'outil, avec ou sans objet inséré. = fichiers "
-             "sources d'origine (issus du lot) + fichiers générés par la récursion (fichiers extraits "
-             "puis analysés à leur tour). Ce total peut donc dépasser le volume du lot chargé. "
-             "Chaque fichier traité figure dans l'onglet « Fichiers Traités »."),
-            ("Fichiers extraits avec succès",
-             "Nombre d'objets insérés et de pièces jointes extraits et enregistrés dans le dossier "
-             "de sortie, à tous les niveaux. Liste dans l'onglet « Fichiers Extraits »."),
-            ("Fichiers non archivables",
-             "Objets insérés trouvés mais non extraits : type non pris en charge par l'archivage "
-             "SharePoint ou fichier vide. Ils restent dans le document d'origine, accompagnés d'un "
-             "message d'avertissement. Liste dans l'onglet « Non Archivables »."),
-            ("Fichiers exclus de l'analyse",
-             "Fichiers du lot dont le format n'est pas pris en charge (ils ne sont ni analysés ni "
-             "recopiés, un dossier vide est créé à leur nom), et fichiers extraits dont le contenu "
-             "n'est pas analysable (archives ZIP, pages HTML). Liste dans l'onglet « Fichiers Exclus »."),
-            ("Total des fichiers présents dans le dossier de sortie",
-             "Nombre de fichiers réellement présents dans les sous-dossiers (hors ce rapport). C'est "
-             "le volume à réintégrer. = documents sources + fichiers extraits + PDF issus d'e-mails "
-             "+ fichiers extraits convertis + autres. Le détail est donné dans la section 4 du Résumé."),
-            ("Onglet « Par extension »",
-             "Pour chaque extension : nombre de fichiers dans le lot chargé, traités (sources et "
-             "récursion), exclus, extraits et présents dans le dossier de sortie."),
-        ]),
-        ("FORMATS PRIS EN CHARGE", [
-            ("Analysés en entrée",
-             ".docx, .doc, .xlsx, .xlsm, .xls, .pptx, .pptm, .ppt, .pdf, .msg"),
-            ("Non analysés (exclus)",
-             "Tous les autres formats, par exemple .docm, .dotx, .xlsb, .xltx, .jpg, .png, .txt, "
-             ".csv, .zip, .7z, .htm. Ils sont comptés dans le lot chargé et listés dans l'onglet "
-             "« Fichiers Exclus »."),
-            ("Objets extraits des documents",
-             ".pdf, .docx, .doc, .xlsx, .xlsm, .xls, .pptx, .pptm, .ppt, .msg, .txt, .zip, .7z, "
-             ".htm, .html"),
-            ("Objets non archivables",
-             "Tout autre type d'objet inséré (ex. modèle CATIA, exécutable, objet non identifié) et "
-             "les fichiers vides (0 Ko) : conservés dans le document d'origine."),
-            ("Images",
-             "Les images (.png, .jpg, .gif, .bmp, .emf, .wmf…) intégrées dans les documents ou "
-             "jointes aux e-mails font partie du contenu visuel : elles ne sont ni extraites ni comptées."),
-            ("Fichiers extraits non analysés",
-             ".txt et .7z restent tels quels. Les .zip, .htm et .html sont signalés « Succès + "
-             "Retraitement » : leur contenu doit être vérifié manuellement."),
-        ]),
-        ("STATUTS — onglet « Fichiers Traités »", [
-            ("Traité avec succès",
-             "Le document a été analysé. Les objets trouvés (s'il y en a) figurent dans les onglets "
-             "« Fichiers Extraits » et « Non Archivables »."),
-            ("N fichier(s) extrait(s)",
-             "Ancien format (.doc/.xls/.ppt) qui n'a pas pu être converti et a été analysé directement : "
-             "N objets ont été extraits."),
-            ("N pièce(s) jointe(s) extraite(s)",
-             "E-mail MSG : N pièces jointes ont été extraites et l'e-mail a été converti en PDF."),
-            ("Aucune pièce jointe",
-             "E-mail MSG trouvé dans un document, sans pièce jointe : il a été converti en PDF."),
-            ("Aucun fichier incorporé",
-             "Le document ne contient aucun objet inséré. Il est recopié à l'identique."),
-            ("Aucun fichier incorporé (embeddings non référencés dans le corps)",
-             "Document Word qui contient un espace de stockage d'objets (créé par Word pour les données "
-             "d'un graphique, ou resté après la suppression d'un objet), mais aucun objet n'apparaît "
-             "dans le texte. Il n'y a rien à extraire ; le document est recopié à l'identique."),
-            ("Aucun fichier incorporé (embeddings non référencés dans les feuilles)",
-             "Même situation pour un classeur Excel."),
-            ("Fallback (mapping vide)",
-             "Présentation PowerPoint dont l'emplacement des objets dans les diapositives n'a pas pu "
-             "être déterminé : les objets ont été extraits directement, sans remplacement par "
-             "« Voir <nom> » dans la présentation."),
-            ("Erreur : <message>",
-             "Le fichier n'a pas pu être analysé. Il reste dans le dossier de sortie sans modification. "
-             "À ouvrir manuellement pour vérification."),
-            ("Erreur : Bad offset for central directory  /  File is not a zip file",
-             "Fichier endommagé ou incomplet, ou dont l'extension ne correspond pas au contenu (par "
-             "exemple un ancien .doc renommé en .docx) : il ne peut pas être ouvert comme document "
-             "Office moderne."),
-            ("Erreur : [WinError 32] …",
-             "Fichier verrouillé par un autre programme (Word, Excel, antivirus) au moment du traitement."),
-        ]),
-        ("STATUTS — onglet « Fichiers Extraits »", [
-            ("Succès", "Objet extrait et enregistré dans le dossier de sortie."),
-            ("Succès (fallback)",
-             "Objet extrait d'une présentation PowerPoint sans connaître son emplacement (voir "
-             "« Fallback (mapping vide) »)."),
-            ("Succès + Retraitement",
-             "Archive (.zip, .7z) ou page web (.htm, .html) extraite : son contenu n'est pas analysé "
-             "par l'outil et doit être traité manuellement."),
-        ]),
-        ("STATUTS — onglet « Non Archivables »", [
-            ("Conservé dans le document — type non supporté SharePoint  /  Conservé dans le document  /  "
-             "Conservé  /  ⚠️ Type non supporté - Conservé dans document",
-             "Objet dont le type n'est pas archivable sur SharePoint. Il reste dans le document d'origine, "
-             "accompagné d'un message d'avertissement."),
-            ("Conservé — type non supporté",
-             "Pièce jointe d'e-mail d'un type non pris en charge : elle n'est pas extraite et reste "
-             "dans l'e-mail (visible dans le PDF)."),
-            ("Ignoré - Taille 0 Ko  /  Ignoré",
-             "Objet vide (0 Ko) : rien à extraire. Un message est ajouté dans le document."),
-        ]),
-        ("VOCABULAIRE", [
-            ("Objet inséré / fichier encapsulé",
-             "Fichier placé à l'intérieur d'un autre (ex. un PDF inséré dans un Word, une pièce jointe "
-             "d'e-mail)."),
-            ("Fichier source", "Fichier du lot chargé par l'utilisateur."),
-            ("Fichier enfant / récursion",
-             "Fichier extrait d'un autre fichier, puis analysé à son tour pour y chercher d'autres objets."),
-            ("Nomenclature FJ",
-             "Nommage des fichiers extraits : nom du fichier parent + numéro d'ordre "
-             "(ex. DER-274703_1_FJ_1.pdf, _FJ_2.xlsx…)."),
-            ("Doublon _A, _B…",
-             "Suffixe ajouté au dossier (et aux fichiers extraits) quand plusieurs fichiers chargés "
-             "portent le même nom."),
-            ("Mapping",
-             "Repérage de l'emplacement de chaque objet dans le document, pour le remplacer par "
-             "« Voir <nom> » au bon endroit."),
-            ("Fallback", "Méthode de secours utilisée quand le mapping échoue."),
-            ("Embeddings",
-             "Espace interne d'un fichier Office où sont stockés les objets insérés."),
-        ]),
-        ("RAPPROCHEMENT AVEC LE DOSSIER DE SORTIE", [
-            ("Un dossier par fichier chargé",
-             "Le nombre de sous-dossiers est égal au volume du lot chargé. Les fichiers exclus laissent "
-             "un dossier vide."),
-            ("Contenu d'un sous-dossier",
-             "Le document source (modifié ou copié), tous ses fichiers extraits (tous niveaux de "
-             "récursion confondus) et les PDF des e-mails."),
-            ("E-mails MSG",
-             "Un MSG extrait n'apparaît pas dans le dossier de sortie : il est remplacé par son PDF, "
-             "de même nom."),
-            ("Anciens formats",
-             "Un .doc/.xls/.ppt extrait apparaît sous sa version convertie (.docx/.xlsx/.pptx)."),
-            ("Non archivables", "Ils ne sont pas dans le dossier de sortie : ils restent dans le document."),
-            ("Pièces jointes identiques",
-             "Une même pièce jointe présente plusieurs fois dans un e-mail n'est extraite qu'une fois."),
-        ]),
-    ]
-
-    def _write_guide_sheet(self, ws, header_cell, section_color):
-        """Onglet « Guide » : explication des indicateurs, formats et statuts du rapport."""
-        ws.merge_cells('A1:B1')
-        header_cell(ws['A1'], f"GUIDE DE LECTURE DU RAPPORT — version {TOOL_VERSION}",
-                    "2C3E50", font_size=14)
-        ws.row_dimensions[1].height = 30
-        r = 3
-        for title, rows in self.GUIDE_SECTIONS:
-            ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=2)
-            header_cell(ws.cell(r, 1), title, section_color, font_size=12)
-            ws.row_dimensions[r].height = 24
-            r += 1
-            for term, text in rows:
-                a = ws.cell(r, 1, term)
-                a.font = Font(bold=True, size=10)
-                a.alignment = Alignment(wrap_text=True, vertical='top')
-                b = ws.cell(r, 2, text)
-                b.font = Font(size=10)
-                b.alignment = Alignment(wrap_text=True, vertical='top')
-                lines = max(-(-len(text) // 120), -(-len(term) // 45), 1)
-                ws.row_dimensions[r].height = 14 * lines + 4
-                r += 1
-            r += 1
-        ws.column_dimensions['A'].width = 48
-        ws.column_dimensions['B'].width = 125
-
     def process_file(self, file_path, output_dir):
             """Traite un fichier et extrait les objets incorporés"""
             file_path = Path(file_path)
@@ -7885,7 +7395,6 @@ class EmbeddedFileExtractor:
 
                     if was_converted:
                         self.log(f"  ✅ Fichier converti, traitement du nouveau format")
-                        self._converted_from[Path(converted_path).name] = file_ext
                         file_path = converted_path
                         file_ext = file_path.suffix.lower()
                         # Marquer le fichier converti comme traité (évite double récursion)
@@ -7928,11 +7437,6 @@ class EmbeddedFileExtractor:
 
                 else:
                     self.log(f"  ⚠️ Format non supporté: {file_ext}")
-                    self.report_data['excluded'].append({
-                        'file_name': file_path.name,
-                        'extension': file_ext or '(sans extension)',
-                        'origine': self._current_origin,
-                    })
                     return []
 
                 # ── Fallback universel : dossier vide → copie de l'original ──
@@ -7970,17 +7474,6 @@ class EmbeddedFileExtractor:
             pass
         self._safe_copy2(src, dst)
 
-    def _report_embedded_msg(self, msg_path, attachments):
-        """Enregistre comme traité un MSG trouvé à l'intérieur d'un document (niveau récursion)."""
-        n = len(attachments) if attachments else 0
-        self.add_to_report('processed', {
-            'file_name': Path(msg_path).name,
-            'file_type': 'MSG',
-            'files_found': n,
-            'status': f'{n} pièce(s) jointe(s) extraite(s)' if n else 'Aucune pièce jointe',
-            'origine': 'Récursion',
-        })
-
     def _ensure_processed_entry(self, file_path, error=None):
         """Garantit qu'un fichier passé par process_file figure dans les fichiers traités."""
         name = Path(file_path).name
@@ -8017,7 +7510,7 @@ class SimpleFileExtractorGUI:
     
     def __init__(self, root):
         self.root = root
-        self.root.title(f"EXTRACTEUR DES FICHIERS INCORPORES — Version {TOOL_VERSION}")
+        self.root.title("EXTRACTEUR DES FICHIERS INCORPORES")
         self.root.geometry("900x850")
         self.root.configure(bg='#ecf0f1')
         
@@ -8385,8 +7878,6 @@ class SimpleFileExtractorGUI:
 
                     extractor = EmbeddedFileExtractor(indexation_manager)
                     extractor.total_input_files = len(self.selected_files)
-                    extractor.input_files = list(self.selected_files)
-                    extractor._current_origin = 'Source'
                     extractor._processed_absolute_paths = set()
 
                     # ── Index de départ manuel ──────────────────────────────────
@@ -8497,8 +7988,6 @@ class SimpleFileExtractorGUI:
                 # =================================================================
                 # ÉTAPE 3 : EXTRACTION RÉCURSIVE
                 # =================================================================
-                if extractor is not None:
-                    extractor._current_origin = 'Récursion'
                 if not stopped_early and directories_to_recurse:
                     log("")
                     log("🔄 ÉTAPE 3 : EXTRACTION RÉCURSIVE (3 niveaux)")
@@ -8704,7 +8193,7 @@ if __name__ == "__main__":
     
     # Lancement normal
     print("=" * 70)
-    print(f"Extracteur de Fichiers Incorporés - VERSION {TOOL_VERSION}")
+    print("Extracteur de Fichiers Incorporés - VERSION CORRIGÉE")
     print("=" * 70)
     print("\n✅ CORRECTION 1 : Activation Excel fonctionnelle")
     print("   → Scripts VBS optimisés pour activation rapide")
