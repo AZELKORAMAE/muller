@@ -7366,6 +7366,84 @@ class EmbeddedFileExtractor:
                 ws_na.column_dimensions['F'].width = 50
 
                 # ================================================================
+                # FEUILLE 5 : EXPLICATION DES STATUTS (texte uniquement)
+                # ================================================================
+                ws_st = wb.create_sheet("Explication des statuts")
+                ws_st.merge_cells('A1:C1')
+                header_cell(ws_st['A1'], "SIGNIFICATION DES STATUTS DU RAPPORT",
+                            COLOR_HEADER_DARK, font_size=13)
+                ws_st.row_dimensions[1].height = 28
+                for col, h in enumerate(['Onglet', 'Statut', 'Signification'], 1):
+                    header_cell(ws_st.cell(3, col), h, COLOR_HEADER_BLUE)
+                STATUTS = [
+                    ("Fichiers Traités", "Traité avec succès",
+                     "Le document a été analysé. Les objets trouvés (s'il y en a) figurent dans "
+                     "les onglets « Fichiers Extraits » et « Non Archivables »."),
+                    ("Fichiers Traités", "N fichier(s) extrait(s)",
+                     "Ancien format (.doc, .xls, .ppt) qui n'a pas pu être converti au format "
+                     "moderne et a été analysé directement : N objets ont été extraits."),
+                    ("Fichiers Traités", "N pièce(s) jointe(s) extraite(s)",
+                     "E-mail Outlook (MSG) : N pièces jointes ont été extraites et l'e-mail a été "
+                     "converti en PDF."),
+                    ("Fichiers Traités", "Aucun fichier incorporé",
+                     "Le document ne contient aucun objet inséré. Il est recopié à l'identique "
+                     "dans le dossier de sortie."),
+                    ("Fichiers Traités", "Aucun fichier incorporé (embeddings non référencés dans le corps)",
+                     "Document Word qui contient un espace de stockage d'objets (créé par Word pour "
+                     "les données d'un graphique, ou resté après la suppression d'un objet), mais "
+                     "aucun objet n'apparaît dans le texte. Il n'y a rien à extraire : le document "
+                     "est recopié à l'identique."),
+                    ("Fichiers Traités", "Aucun fichier incorporé (embeddings non référencés dans les feuilles)",
+                     "Même situation pour un classeur Excel : rien à extraire, le classeur est "
+                     "recopié à l'identique."),
+                    ("Fichiers Traités", "Fallback (mapping vide)",
+                     "Présentation PowerPoint dont l'emplacement des objets dans les diapositives "
+                     "n'a pas pu être déterminé : les objets ont été extraits directement, sans "
+                     "être remplacés par « Voir <nom> » dans la présentation."),
+                    ("Fichiers Traités", "Erreur : <message>",
+                     "Le fichier n'a pas pu être analysé. Il reste dans le dossier de sortie sans "
+                     "modification et doit être vérifié manuellement."),
+                    ("Fichiers Traités", "Erreur : Bad offset for central directory",
+                     "Fichier endommagé ou incomplet, ou dont l'extension ne correspond pas au "
+                     "contenu (par exemple un ancien .doc renommé en .docx) : il ne peut pas être "
+                     "ouvert comme document Office."),
+                    ("Fichiers Traités", "Erreur : [WinError 32] …",
+                     "Fichier verrouillé par un autre programme (Word, Excel, antivirus) au moment "
+                     "du traitement."),
+                    ("Fichiers Extraits", "Succès",
+                     "Objet inséré extrait et enregistré dans le dossier de sortie."),
+                    ("Fichiers Extraits", "Succès (fallback)",
+                     "Objet extrait d'une présentation PowerPoint sans connaître son emplacement "
+                     "(voir « Fallback (mapping vide) »)."),
+                    ("Fichiers Extraits", "Succès + Retraitement",
+                     "Archive (.zip, .7z) ou page web (.htm, .html) extraite : son contenu n'est "
+                     "pas analysé par l'outil et doit être traité manuellement."),
+                    ("Non Archivables", "Conservé dans le document — type non supporté SharePoint",
+                     "Objet inséré dans une présentation PowerPoint dont le type n'est pas "
+                     "archivable sur SharePoint. Il reste dans le document, avec un message "
+                     "d'avertissement à côté."),
+                    ("Non Archivables", "Conservé dans le document  /  Conservé  /  "
+                                        "⚠️ Type non supporté - Conservé dans document",
+                     "Objet inséré (Word, Excel, PDF ou objet OLE) dont le type n'est pas "
+                     "archivable sur SharePoint (ex. fichier CATIA, exécutable, objet non "
+                     "identifié). Il reste dans le document d'origine."),
+                    ("Non Archivables", "Conservé — type non supporté",
+                     "Pièce jointe d'un e-mail MSG dont le type n'est pas pris en charge : elle "
+                     "n'est pas extraite et reste dans l'e-mail."),
+                    ("Non Archivables", "Ignoré - Taille 0 Ko  /  Ignoré",
+                     "Objet vide (0 Ko) : il n'y a rien à extraire."),
+                ]
+                for r, (onglet, statut, texte) in enumerate(STATUTS, 4):
+                    for col, val in enumerate((onglet, statut, texte), 1):
+                        cell = ws_st.cell(r, col, val)
+                        cell.alignment = Alignment(wrap_text=True, vertical='top')
+                        cell.font = Font(bold=(col == 2), size=10)
+                    ws_st.row_dimensions[r].height = 14 * max(1, -(-len(texte) // 95)) + 4
+                ws_st.column_dimensions['A'].width = 18
+                ws_st.column_dimensions['B'].width = 50
+                ws_st.column_dimensions['C'].width = 100
+
+                # ================================================================
                 # Sauvegarder
                 # ================================================================
                 wb.save(output_path)
