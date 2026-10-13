@@ -870,7 +870,7 @@ class EmbeddedFileExtractor:
             return 0
 
         SUPPORTED = {
-            '.pdf', '.docx', '.doc', '.xlsx', '.xlsm', '.xls',
+            '.pdf', '.docx', '.doc', '.docm', '.xlsx', '.xlsm', '.xls', '.xlsb',
             '.pptx', '.pptm', '.ppt', '.msg', '.zip',
             '.htm', '.html'
         }
@@ -1518,10 +1518,10 @@ class EmbeddedFileExtractor:
             file_path = Path(file_path)
             ext = file_path.suffix.lower()
 
-            if ext not in ['.doc', '.ppt', '.xls']:
+            if ext not in ['.doc', '.ppt', '.xls', '.docm', '.xlsb']:
                 return file_path, False
 
-            self.log(f"    🔄 Conversion format ancien → moderne: {file_path.name}")
+            self.log(f"    🔄 Conversion vers le format analysable: {file_path.name}")
 
             import win32com.client
             import pythoncom
@@ -1529,8 +1529,8 @@ class EmbeddedFileExtractor:
             pythoncom.CoInitialize()
 
             try:
-                # ── .doc → .docx ──────────────────────────────────────────
-                if ext == '.doc':
+                # ── .doc / .docm → .docx ──────────────────────────────────
+                if ext in ('.doc', '.docm'):
                     new_path = file_path.with_suffix('.docx')
                     _conv_result = [None]
                     _conv_error  = [None]
@@ -1588,7 +1588,7 @@ class EmbeddedFileExtractor:
                         self.log(f"    ✅ Converti: {file_path.name} → {new_path.name}")
                         return _conv_result[0], True
                     else:
-                        self.log(f"    ❌ Erreur conversion .doc: {_conv_error[0]}")
+                        self.log(f"    ❌ Erreur conversion {ext}: {_conv_error[0]}")
                         return file_path, False
 
                 # ── .ppt → .pptx ──────────────────────────────────────────
@@ -1654,8 +1654,8 @@ class EmbeddedFileExtractor:
                         self.log(f"    ❌ Erreur conversion .ppt: {_conv_error[0]}")
                         return file_path, False
 
-                # ── .xls → .xlsx / .xlsm ──────────────────────────────────
-                elif ext == '.xls':
+                # ── .xls / .xlsb → .xlsx / .xlsm ──────────────────────────
+                elif ext in ('.xls', '.xlsb'):
                     new_path = file_path.with_suffix('.xlsx')
                     excel = None
                     wb = None
@@ -1741,7 +1741,7 @@ class EmbeddedFileExtractor:
                         return new_path, True
 
                     except Exception as e:
-                        self.log(f"    ❌ Erreur conversion .xls: {e}")
+                        self.log(f"    ❌ Erreur conversion {ext}: {e}")
                         return file_path, False
 
                     finally:
@@ -7143,7 +7143,8 @@ class EmbeddedFileExtractor:
                     else:
                         files_ok.append(entry)
 
-                total_processed       = len(self.report_data['files_processed'])
+                total_processed       = sum(1 for d in self.report_data['files_processed']
+                                            if d.get('status') != 'Fichier non supporté')
                 total_extracted       = len(files_ok)
                 total_non_archivable  = len(files_non_archivable)
 
@@ -7171,13 +7172,15 @@ class EmbeddedFileExtractor:
                 stats = [
                     ("Volume du lot chargé :",          self.total_input_files, "8E44AD",
                      "Nombre de fichiers sélectionnés dans l'application au lancement du "
-                     "traitement, tous formats confondus (y compris ceux que l'outil "
-                     "n'analyse pas : JPG, TXT, PNG…)."),
+                     "traitement, tous formats confondus. Les fichiers dans un format que "
+                     "l'outil n'analyse pas (JPG, TXT, PNG…) apparaissent dans l'onglet "
+                     "« Fichiers Traités » avec le statut « Fichier non supporté »."),
                     ("Fichiers sources traités :",      total_processed,       "27AE60",
                      "Nombre total de documents analysés par l'outil : les fichiers du lot "
                      "chargé + les fichiers « enfants » extraits puis analysés à leur tour "
                      "(récursion, jusqu'à 3 niveaux), qu'ils contiennent ou non des objets "
-                     "insérés. Ce chiffre peut donc dépasser le volume du lot chargé."),
+                     "insérés. Ce chiffre peut donc dépasser le volume du lot chargé. Les "
+                     "fichiers au statut « Fichier non supporté » ne sont pas comptés ici."),
                     ("Fichiers extraits avec succès :", total_extracted,       "2980B9",
                      "Nombre d'objets insérés (fichiers encapsulés, pièces jointes de MSG) "
                      "extraits des documents et enregistrés dans le dossier de sortie, "
@@ -7228,6 +7231,8 @@ class EmbeddedFileExtractor:
                     status = d.get('status', '')
                     if 'Erreur' in status:
                         color_row(ws_proc, row, 5, COLOR_ROW_RED)
+                    elif status == 'Fichier non supporté':
+                        color_row(ws_proc, row, 5, COLOR_ROW_ORANGE)
                     elif 'extrait' in status or 'succès' in status.lower():
                         color_row(ws_proc, row, 5, COLOR_ROW_GREEN)
 
@@ -7396,6 +7401,15 @@ class EmbeddedFileExtractor:
                     ("Fichiers Traités", "Aucun fichier incorporé (embeddings non référencés dans les feuilles)",
                      "Même situation pour un classeur Excel : rien à extraire, le classeur est "
                      "recopié à l'identique."),
+                    ("Fichiers Traités", "Fichier non supporté",
+                     "Fichier dont le format n'est pas analysé par l'outil (ex. .jpg, .png, .txt, "
+                     ".csv, .zip). Il est listé pour information mais n'est ni analysé ni recopié "
+                     "dans le dossier de sortie, et n'est pas compté dans « Fichiers sources "
+                     "traités ». Formats analysés : .docx, .doc, .docm, .xlsx, .xlsm, .xls, .xlsb, "
+                     ".pptx, .pptm, .ppt, .pdf, .msg."),
+                    ("Fichiers Traités", "Erreur : conversion .xlsb → .xlsx impossible (Excel requis)",
+                     "Classeur .xlsb (format binaire) qu'Excel n'a pas pu convertir en .xlsx : "
+                     "il n'a pas pu être analysé. À vérifier manuellement."),
                     ("Fichiers Traités", "Fallback (mapping vide)",
                      "Présentation PowerPoint dont l'emplacement des objets dans les diapositives "
                      "n'a pas pu être déterminé : les objets ont été extraits directement, sans "
@@ -7467,7 +7481,7 @@ class EmbeddedFileExtractor:
                 # ========================================
                 # CONVERSION ANCIEN FORMAT SI NÉCESSAIRE
                 # ========================================
-                if file_ext in ['.doc', '.ppt', '.xls']:
+                if file_ext in ['.doc', '.ppt', '.xls', '.docm', '.xlsb']:
                     original_legacy_name = file_path.name
                     converted_path, was_converted = self.convert_legacy_to_modern_format(file_path)
 
@@ -7513,8 +7527,25 @@ class EmbeddedFileExtractor:
                     self.log(f"  📦 Traitement ancien format (méthode legacy)")
                     extracted_files = self.extract_ole_from_legacy(file_path, output_dir)
 
+                # Conversion .docm impossible : même structure qu'un .docx, analyse directe
+                elif file_ext == '.docm':
+                    self.log(f"  📦 Analyse directe du .docm")
+                    extracted_files = self.extract_ole_from_docx(file_path, output_dir)
+
+                # Conversion .xlsb impossible : format binaire non lisible sans Excel
+                elif file_ext == '.xlsb':
+                    self.log(f"  ❌ .xlsb non analysable sans conversion par Excel")
+                    self._ensure_processed_entry(
+                        file_path, error="conversion .xlsb → .xlsx impossible (Excel requis)")
+
                 else:
                     self.log(f"  ⚠️ Format non supporté: {file_ext}")
+                    self.add_to_report('processed', {
+                        'file_name': file_path.name,
+                        'file_type': file_ext.lstrip('.').upper() or '?',
+                        'files_found': 0,
+                        'status': 'Fichier non supporté',
+                    })
                     return []
 
                 # ── Fallback universel : dossier vide → copie de l'original ──
@@ -7854,9 +7885,9 @@ class SimpleFileExtractorGUI:
         files = filedialog.askopenfilenames(
             title="Sélectionner documents",
             filetypes=[
-                ("Tous supportés", "*.docx;*.doc;*.xlsx;*.xlsm;*.xls;*.pptx;*.pptm;*.ppt;*.pdf;*.msg"),
-                ("Word", "*.docx;*.doc"),
-                ("Excel", "*.xlsx;*.xlsm;*.xls"),
+                ("Tous supportés", "*.docx;*.doc;*.docm;*.xlsx;*.xlsm;*.xls;*.xlsb;*.pptx;*.pptm;*.ppt;*.pdf;*.msg"),
+                ("Word", "*.docx;*.doc;*.docm"),
+                ("Excel", "*.xlsx;*.xlsm;*.xls;*.xlsb"),
                 ("PowerPoint", "*.pptx;*.pptm;*.ppt"),
                 ("PDF", "*.pdf"),
                 ("Outlook MSG", "*.msg"),
